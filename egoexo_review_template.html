@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ego-Exo4D query review</title>
+<style>
+body{font:16px system-ui;background:#f4f6f8;color:#182535;max-width:1000px;margin:30px auto;padding:0 20px}button,input,select{font:inherit;padding:7px;margin:4px}button{cursor:pointer}#stage{position:relative;display:inline-block;max-width:100%}video{display:block;max-width:100%;max-height:550px}canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}fieldset{margin:15px 0;background:white;border:1px solid #ccd3db}#status{white-space:pre-wrap}label{display:inline-block}small{display:block;color:#526174}
+</style>
+<h1>Ego-Exo4D: 10 candidate queries</h1>
+<p>Local RGB videos with hand annotations. Object queries and response tracks still require human annotation. These are custom demo examples, not the official Ego4D VQ2D benchmark.</p>
+<select id="choice"></select><button id="export">Export annotations</button>
+<h2 id="title"></h2><p id="info"></p>
+<div id="stage"><video id="video" controls preload="metadata"></video><canvas id="overlay"></canvas></div>
+<small>Pause the video and enable drawing to mark a box. Coordinates use the video's native pixels. Drawing temporarily covers the video controls.</small>
+<fieldset><legend>Query</legend>
+<label>Object name <input id="object" placeholder="Identify the visible object"></label>
+<button id="queryTime">Set query time</button>
+<button id="draw">Enable box drawing</button><button id="queryBox">Use box for query crop</button>
+</fieldset>
+<fieldset><legend>Earlier response occurrence</legend>
+<p>Find the object's most recent visible occurrence before the query time. Mark its interval and boxes throughout that interval, including the endpoints. Hand pose is not an object box or a contact label.</p>
+<button id="start">Set response start</button><button id="end">Set response end</button>
+<button id="track">Add box at current time</button><button id="clear">Clear current labels</button>
+<label><input type="checkbox" id="verified"> Human verified complete track</label>
+</fieldset>
+<pre id="status"></pre>
+<script>
+const rows=__DATA__;
+const $=id=>document.getElementById(id), v=$('video'), c=$('overlay'), ctx=c.getContext('2d');
+let current=0, box=null, anchor=null, drawing=false;
+rows.forEach((r,i)=>{let o=document.createElement('option');o.value=i;o.textContent=`${r.query_id}: ${r.task} — ${r.take_name}`;$('choice').append(o)});
+function row(){return rows[current]}
+function show(){let r=row();$('status').textContent=JSON.stringify({query_id:r.query_id,object:r.query_object,query_time_sec:r.query_time_sec,query_box:r.query_box,response_start_sec:r.response_start_sec,response_end_sec:r.response_end_sec,response_track:r.response_track,annotation_status:r.annotation_status},null,2)}
+function mark(){row().annotation_status='draft';$('verified').checked=false;show()}
+function load(){current=Number($('choice').value);let r=row();v.src=r.video_url;$('title').textContent=r.take_name;$('info').textContent=`${r.task} · ${r.duration_sec.toFixed(1)} seconds · source split ${r.source_split}`;$('object').value=r.query_object;$('verified').checked=r.annotation_status==='human_verified';box=null;ctx.clearRect(0,0,c.width,c.height);show()}
+v.onloadedmetadata=()=>{c.width=v.videoWidth;c.height=v.videoHeight};
+v.onseeked=()=>{box=null;ctx.clearRect(0,0,c.width,c.height)};
+$('choice').onchange=load;
+$('object').oninput=()=>{row().query_object=$('object').value;mark()};
+$('queryTime').onclick=()=>{row().query_time_sec=v.currentTime;mark()};
+$('start').onclick=()=>{row().response_start_sec=v.currentTime;mark()};
+$('end').onclick=()=>{row().response_end_sec=v.currentTime;mark()};
+$('draw').onclick=()=>{drawing=!drawing;c.style.pointerEvents=drawing?'auto':'none';$('draw').textContent=drawing?'Disable box drawing':'Enable box drawing';v.pause()};
+function point(e){let b=c.getBoundingClientRect();return [Math.max(0,Math.min(c.width,(e.clientX-b.left)*c.width/b.width)),Math.max(0,Math.min(c.height,(e.clientY-b.top)*c.height/b.height))]}
+c.onpointerdown=e=>{anchor=point(e);c.setPointerCapture(e.pointerId)};
+c.onpointermove=e=>{if(!anchor)return;let p=point(e);box=[Math.min(anchor[0],p[0]),Math.min(anchor[1],p[1]),Math.max(anchor[0],p[0]),Math.max(anchor[1],p[1])].map(Math.round);ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#19ff91';ctx.lineWidth=3;ctx.strokeRect(box[0],box[1],box[2]-box[0],box[3]-box[1])};
+c.onpointerup=()=>{anchor=null};
+function validBox(){return box&&box[2]>box[0]&&box[3]>box[1]}
+$('queryBox').onclick=()=>{if(!validBox())return alert('Draw a box first.');row().query_box={xyxy:[...box],width:c.width,height:c.height};row().query_time_sec=v.currentTime;mark()};
+$('track').onclick=()=>{if(!validBox())return alert('Draw a box first.');row().response_track.push({time_sec:v.currentTime,xyxy:[...box],width:c.width,height:c.height});row().response_track.sort((a,b)=>a.time_sec-b.time_sec);mark()};
+$('clear').onclick=()=>{if(!confirm('Clear labels for this query?'))return;Object.assign(row(),{query_object:'',query_time_sec:null,query_box:null,response_start_sec:null,response_end_sec:null,response_track:[],annotation_status:'unlabelled'});load()};
+$('verified').onchange=()=>{let r=row();if($('verified').checked&&(!r.query_object||!r.query_box||r.query_time_sec===null||r.response_start_sec===null||r.response_end_sec===null||r.response_start_sec>=r.response_end_sec||r.response_end_sec>=r.query_time_sec||r.response_track.length<2)){alert('Provide the query, an earlier valid response interval, and the complete response track first.');$('verified').checked=false;return}r.annotation_status=$('verified').checked?'human_verified':'draft';show()};
+$('export').onclick=()=>{let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(rows,null,2)],{type:'application/json'}));a.download='egoexo_queries_annotated.json';a.click();URL.revokeObjectURL(a.href)};
+load();
+</script>

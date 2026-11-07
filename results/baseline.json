@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-07",
+  "data": "../JPoSE_data",
+  "upstream_source": "../Joint-Part-of-Speech-Embeddings/src",
+  "scope": "Repository retrieval baseline, not full EPIC paper reproduction; Ego-Exo4D object localization not evaluated.",
+  "models": [
+    {
+      "model": "Pretrained",
+      "nDCG": 0.69,
+      "mAP": 0.734
+    },
+    {
+      "model": "From scratch, 1 epoch",
+      "nDCG": 0.536,
+      "mAP": 0.478
+    }
+  ],
+  "seed": 230,
+  "training_examples": 67217,
+  "optimizer": "SGD",
+  "learning_rate": 0.01,
+  "momentum": 0.9,
+  "batch_size": 64,
+  "threads": 4,
+  "environment": {
+    "torch": "2.15.0+cpu",
+    "numpy": "2.5.4"
+  },
+  "note": "Reference measurements from the original completed run, not a new run on the reader machine."
+}

@@ -1,0 +1,5 @@
+numpy>=1.24
+pandas>=2
+torch>=2
+tqdm>=4
+tensorboard>=2

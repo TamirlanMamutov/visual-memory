@@ -1,0 +1,12 @@
+# Generated experiments, checkpoints, videos and local environments
+output/
+migration-*.json
+__pycache__/
+*.py[cod]
+desktop.ini
+.venv/
+venv/
+.env
+*.pth
+*.mp4
+*.MP4
