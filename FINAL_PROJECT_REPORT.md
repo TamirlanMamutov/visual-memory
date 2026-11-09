@@ -170,3 +170,34 @@ The existing GUI is launched with `Start Experiments.cmd`; its results table
 loads completed EPIC run metrics. Individual JSON files under each run folder
 are the authoritative metrics. Generated outputs and the `.venv` are ignored
 by Git.
+
+## Multimodal localization implementation update
+
+The separate branch `tamirlan/multimodal-localization-model` adds an initial
+trainable localization prototype without combining EPIC retrieval labels with
+object-box labels:
+
+- `multimodal_localizer.py` cross-attends video patch features to image and/or
+  text query features, models temporal context, and predicts per-frame
+  presence plus normalized `[x1,y1,x2,y2]` boxes.
+- `localization_loss` combines presence BCE, positive-frame box L1, and GIoU
+  losses, with padding and absent-object frames masked appropriately.
+- `train_multimodal_localizer.py` loads memory-mapped feature bundles, trains
+  and validates the model, and saves `best.pt`, `last.pt`, and JSONL metrics.
+- `tests/test_multimodal_localizer.py` covers each query mode, batch masks,
+  gradient flow, empty-object frames, and a synthetic train/validation pass.
+
+This is a **feature-level model prototype**, not an end-to-end video/text
+system. It expects precomputed features from fixed image/video and text
+encoders; it does not yet provide those encoders, generate features from raw
+media, or implement the official VQ2D/stAP25 benchmark. The existing VQ2D
+annotation files remain locally present, but the query crops and paired clips
+are missing. Therefore no real localization training or quality claim is
+reported. The synthetic training pass verifies that the implemented data
+contract and optimizer path execute, not that the model localizes real objects.
+
+To progress to a measured model, first make the licensed VQ2D query crops and
+paired clips available, define and verify train/validation feature extraction
+for all enabled modalities, generate the documented `.npy` bundles, and add
+official localization evaluation. Until then, the strong EPIC/JPoSE numbers
+above remain retrieval results only.

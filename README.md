@@ -103,6 +103,50 @@ and setup limitations.
 The current results and next steps are summarized in
 [FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md).
 
+## Multimodal temporal localization prototype
+
+`multimodal_localizer.py` adds a trainable feature-level model that predicts an
+object box and presence score for each video frame. It accepts image-query
+features, text-query features, or both. The model requires precomputed features;
+it does not yet include or download the image/video backbone or text encoder.
+The same frozen feature encoders and preprocessing must be used for train and
+validation data.
+
+The trainer reads each split from a directory of `.npy` arrays:
+
+| File | Required shape | Meaning |
+|---|---|---|
+| `video_features.npy` | `[N,T,P,Cv]` | Per-frame visual patch features |
+| `boxes_xyxy.npy` | `[N,T,4]` | Normalized target boxes `[x1,y1,x2,y2]`; use zero boxes when absent |
+| `object_present.npy` | `[N,T]` | Boolean/0-1 object-presence labels |
+| `image_query_features.npy` | `[N,Q,Ci]` | Optional per-query visual features |
+| `image_query_mask.npy` | `[N,Q]` | Optional boolean mask for image-query tokens |
+| `text_query_features.npy` | `[N,L,Ct]` | Optional per-query text-encoder features |
+| `text_query_mask.npy` | `[N,L]` | Optional boolean mask for text-query tokens |
+| `frame_mask.npy` | `[N,T]` | Optional boolean mask for padded video frames |
+
+At least one query-feature array is required. Every sample needs one valid query
+token and at least one valid frame. Array dtypes may be standard numeric types;
+the loader converts features and boxes to float32 and masks to bool. The loader
+memory-maps arrays and copies samples into batches.
+
+```powershell
+python .\train_multimodal_localizer.py `
+  --train-features .\data\localization\train `
+  --val-features .\data\localization\val `
+  --output-dir .\output\localizer `
+  --epochs 20 --batch-size 8 --learning-rate 0.0003
+```
+
+The run writes `last.pt`, the lowest-validation-loss `best.pt`, and per-epoch
+`metrics.jsonl`. It reports presence F1 and mean IoU on positive frames; these
+are prototype diagnostics, **not** the official VQ2D/stAP25 evaluation. The
+feature-bundle contract and a synthetic train/validation pass are unit tested.
+No real localization training was run: the local VQ2D annotations are not
+paired with the required query crops and videos, and this worktree has no
+localization feature bundles. A complete raw-media feature extractor and
+official benchmark adapter remain future work.
+
 Run the contract tests with:
 
 ```powershell
