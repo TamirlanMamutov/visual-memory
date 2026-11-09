@@ -1,0 +1,11 @@
+# GPU training environment for run_tempret.py / run_eagle.py (Python 3.11-3.13).
+# Install CUDA PyTorch first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+open_clip_torch>=3
+transformers>=4.45
+av>=12
+opencv-python>=4.8
+numpy>=1.24
+pandas>=2
+tqdm>=4
+tensorboard>=2

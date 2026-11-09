@@ -74,6 +74,10 @@ Open `output/egoexo-query-review/review.html` after preparation. HTML video link
 
 The GUI displays commands, live logs, saved metrics and committed reference measurements. See [GUI-README.md](GUI-README.md) for controls and [results/README.md](results/README.md) for measured results.
 
+## TempRet and EAGLE
+
+`run_tempret.py` (EK-100 Multi-Instance Retrieval, arXiv 2605.24470) and `run_eagle.py` (Ego4D VQ2D, arXiv 2511.08007) are re-implementations trained from the launcher's first two tabs. They need the GPU environment described in [REPRODUCTION.md](REPRODUCTION.md), which also lists every assumption made where the papers are silent.
+
 ## Evaluation scope
 
 EPIC evaluation uses Joint-Part-of-Speech-Embeddings with the supplied pooled features. Expected README averages are nDCG 0.690 and mAP 0.734. One epoch checks training and validation; it does not reproduce every EPIC paper experiment or the paper's Table 11. The runner currently uses four CPU threads, even with CUDA available.

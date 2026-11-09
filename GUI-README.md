@@ -8,7 +8,18 @@ python .\experiment_gui.py
 
 The launcher uses Python's built-in Tkinter interface. EPIC commands additionally require `torch`, `numpy`, `pandas`, `tqdm` and `tensorboard`. Launch from the Python environment that has these dependencies. On Linux, Tkinter may need a separate system package. Project paths are inferred from the parent of `visual-memory`; `CS230_PROJECT_ROOT` overrides the dataset/repository location.
 
-## EPIC-KITCHENS
+## Training tabs (TempRet and EAGLE)
+
+The **TempRet · EK-100 retrieval** and **EAGLE · Ego4D VQ2D** tabs run `run_tempret.py` and `run_eagle.py` with the GPU environment at `<drive root>\cs230-venv\env` (or `CS230_PYTHON`). Each field maps to a command-line flag; the full command appears in the command box before the run starts.
+
+- **TempRet:** *Decode frames + cache features* (resumable), *Train + evaluate*, *Zero-shot CLIP eval*, *Evaluate checkpoint…*, *Continue from checkpoint…* and *Train reranker on checkpoint…* (retrains only the cross-encoder, about 3 minutes, and picks the fusion weight on held-out training videos). The ablation boxes reproduce the paper's "w/o temporal" and "w/o reranking" rows. Results are labelled *subset* unless all 9,668 test clips are local.
+- **EAGLE:** *Prepare SAM pseudo-masks* (resumable, so rerun it as clips download), *Train*, *Prepare + train + evaluate*, *Evaluate checkpoint…* and *Continue from checkpoint…*, plus no-AMM / no-GLM ablations.
+- A progress bar follows the current step or iteration. The results table shows finished metrics, the latest epoch or iteration of running or stopped runs, and the papers' reference numbers. Checkpoints are written to `<drive root>\cs230-cache\<method>\checkpoints`, which **Open checkpoints folder** opens.
+- The header shows how much data is local (EPIC videos, Ego4D VQ2D clips and downloads in progress, VISOR).
+
+See [REPRODUCTION.md](REPRODUCTION.md) for the implementation, its deviations from the papers, and the data each method needs.
+
+## EPIC-KITCHENS (JPoSE baseline)
 
 - **Evaluate pretrained model** runs `python run_epic_baseline.py --epochs 0` and displays the saved validation nDCG and mAP. Expected README averages: 0.690 and 0.734.
 - **Train from scratch + validate** runs the same script with your chosen epoch count. The default is one full epoch. The script evaluates the downloaded checkpoint first, trains a fresh model, then evaluates the new checkpoint. It is not fine-tuning the downloaded model.
@@ -26,7 +37,7 @@ There is currently no Ego-Exo4D object-localization inference or stAP score in t
 
 ## Running commands
 
-The exact command appears above the results table and can be copied. Logs stream into the lower panel and are saved under `output/launcher-logs`. EPIC stage logs and metrics stay in their timestamped run folders. **Stop current run** terminates only the launched Python command and retains partial outputs. It does not mark a partial run complete. Opening the launcher starts no training and downloads nothing.
+The command appears above the results table and can be copied. The code stores relative script/data locations, while copied commands expand the interpreter and script paths to absolute paths on the current machine. This lets you paste a generated command from any working folder. Absolute paths are computed at runtime, never hardcoded for a particular teammate. Windows commands use PowerShell-safe quoting and the `&` call operator; macOS/Linux use shell quoting. Restart the launcher after updating its code. Logs stream into the lower panel and are saved under `output/launcher-logs`. EPIC stage logs and metrics stay in their timestamped run folders. **Stop current run** terminates only the launched Python command and retains partial outputs. It does not mark a partial run complete. Opening the launcher starts no training and downloads nothing.
 
 Each teammate runs their own local copy against locally available shared data. This interface does not change Drive sharing permissions or edit upstream Git repositories.
 
