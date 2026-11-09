@@ -15,8 +15,22 @@ from experiment_paths import HERE, ROOT
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--learning-rate', type=float, default=0.01)
+    parser.add_argument('--margin', type=float, default=1.0)
+    parser.add_argument('--num-triplets', type=int, default=10)
     parser.add_argument('--finish-run', type=Path, help='Evaluate a checkpoint already saved by an interrupted run')
     args = parser.parse_args()
+    if args.epochs < 0:
+        parser.error('--epochs must be zero or greater.')
+    if args.batch_size < 1:
+        parser.error('--batch-size must be greater than zero.')
+    if args.learning_rate <= 0:
+        parser.error('--learning-rate must be greater than zero.')
+    if args.margin <= 0:
+        parser.error('--margin must be greater than zero.')
+    if args.num_triplets < 1:
+        parser.error('--num-triplets must be greater than zero.')
     out = args.finish_run.resolve() if args.finish_run else HERE / 'output' / ('epic-baseline-' + time.strftime('%Y%m%d-%H%M%S'))
     out.mkdir(parents=True, exist_ok=bool(args.finish_run))
     os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
@@ -49,7 +63,9 @@ def main():
             dataset.action._y_idxs = np.arange(dataset.action.y_len)
         return dataset
     dataset_module.create_epic_jpose_dataset = create_with_validation_ids
-    metadata = dict(seed=230, epochs=args.epochs, torch=torch.__version__,
+    metadata = dict(seed=230, epochs=args.epochs, batch_size=args.batch_size,
+                    learning_rate=args.learning_rate, margin=args.margin,
+                    num_triplets=args.num_triplets, torch=torch.__version__,
                     numpy=np.__version__, cuda=torch.cuda.is_available(),
                     threads=4, data=str(Path.cwd()), upstream_source=sys.path[0],
                     compatibility='Process-local np.int=int alias; validation ID fields restored from matching dataframe for final diagnostic export',
@@ -77,8 +93,16 @@ def main():
         run('pretrained', 'train.test_jpose_triplet',
             ['./data/models/JPoSE_BEST/model/EPIC_100_retrieval_JPoSE_BEST.pth'])
     if args.epochs and not args.finish_run:
+        training_args = [
+            '--num-epochs', str(args.epochs),
+            '--out-dir', (out / 'training').as_posix(),
+            '--batch-size', str(args.batch_size),
+            '--learning-rate', str(args.learning_rate),
+            '--margin', str(args.margin),
+            '--num-triplets', str(args.num_triplets),
+        ]
         run('training', 'train.train_jpose_triplet',
-            ['--num-epochs', str(args.epochs), '--out-dir', (out / 'training').as_posix()])
+            training_args)
     if args.epochs or args.finish_run:
         checkpoint = max((out / 'training').glob('*/model/*.pth'), key=lambda p: int(p.stem.rsplit('_', 1)[1]))
         run('trained-validation', 'train.test_jpose_triplet', [checkpoint.as_posix()])

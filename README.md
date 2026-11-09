@@ -60,6 +60,9 @@ python .\run_epic_baseline.py --epochs 0
 # Train a fresh model for one epoch and validate it
 python .\run_epic_baseline.py --epochs 1
 
+# Train a fresh model for 3 epochs with a candidate learning rate
+python .\run_epic_baseline.py --epochs 3 --learning-rate 0.003
+
 # Export the pretrained model's validation retrieval errors
 python .\inspect_epic_retrieval.py
 
@@ -80,4 +83,28 @@ EPIC evaluation uses Joint-Part-of-Speech-Embeddings with the supplied pooled fe
 
 The Ego-Exo4D command checks local availability, nonzero video sizes and sampled annotation JSON syntax; it does not run an object-localization model or verify full video integrity. Current pose annotations cannot substitute for object query boxes and response tracks. Localization scoring still requires verified ground truth and model integration.
 
+The EPIC runner accepts `--batch-size`, `--learning-rate`, `--margin`, and
+`--num-triplets` to compare fresh JPoSE runs. Runs always initialize a new
+model; they do not resume or fine-tune the pretrained checkpoint. Use the same
+validation set and seed when comparing settings, and do not treat a short run
+as a converged model.
+
 Datasets, pretrained checkpoints, trained weights, generated logs and review pages stay in shared Drive and are ignored by Git. Each teammate needs their own authorized access to the data. Historical logs/configuration snapshots in `output/` retain original absolute paths for provenance; executable scripts and new review data use the portable layout.
+
+## Shared sample contract
+
+`data_contract.py` defines the common PyTorch sample/batch boundary for retrieval
+features, VQLoC localization samples, and decoded video without labels. It
+standardizes tensor dtypes, image ranges, and box coordinates without converting
+the source files or pretending the tasks have the same labels. Retrieval and
+localization must still use separate model heads and homogeneous batches.
+See [DATASET_ANALYSIS.md](DATASET_ANALYSIS.md) for dataset scope, local coverage,
+and setup limitations.
+The current results and next steps are summarized in
+[FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md).
+
+Run the contract tests with:
+
+```powershell
+python -m unittest discover -s .\tests
+```
