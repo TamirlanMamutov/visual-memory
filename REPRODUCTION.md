@@ -30,7 +30,7 @@ E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10 --no-rerank
 E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 0 --rerank-only --checkpoint E:\cs230-cache	empret\checkpoints\<run>est.pt
 ```
 
-Reranker training. Training the cross-encoder jointly inside the 10 dual-encoder epochs (`--reranker-epochs 0`, the first version) left it near chance (ITM loss 0.50 vs 0.69 for guessing). With the paper's alpha = 0.002 its scores then override the first stage, and reranking dropped ViT-L/14 from 15.6 to 5.1 mAP on the local subset. The reranker is therefore trained in its own stage after the first stage:
+Reranker training. Training the cross-encoder jointly inside the 10 dual-encoder epochs (`--reranker-epochs 0`, the first version) left it near chance (ITM loss 0.50 vs 0.69 for guessing). With the paper's alpha = 0.002 its scores then override the first stage, and reranking dropped ViT-L/14 from 15.6 to 5.1 mAP (old metric; nDCG 33.3 to 23.0) on the local subset. The reranker is therefore trained in its own stage after the first stage:
 
 - the first stage is frozen;
 - it trains for 40 epochs, each anchor clip getting its positive, 3 hard negatives per direction drawn from the top 32 first-stage hits over the whole training set, and 1 random negative;
@@ -39,11 +39,19 @@ Reranker training. Training the cross-encoder jointly inside the 10 dual-encoder
 
 Caveat: the first stage did train on those held-out clips, so its held-out scores are optimistic, and alpha is biased towards the first stage. The test-set alpha sweep is logged as a diagnostic only.
 
-| ViT-L/14 frozen, P01+P02 subset (1,256 test clips) | mAP | nDCG |
-|---|---|---|
-| dual encoder (best epoch 5) | 15.55 | 33.28 |
-| + joint ITM, alpha 0.002 (first version) | 5.10 | 22.97 |
-| + separate reranker stage, alpha 10 (held-out choice) | 16.34 | 33.89 |
+Results on the P01 + P02 subset (1,256 test clips x 1,351 sentences; ViT-L/14, frozen image tower; best epoch picked on this same subset):
+
+| Setting | train clips | mAP | nDCG |
+|---|---|---|---|
+| zero-shot CLIP, mean pooling | 0 | 22.51 | 28.67 |
+| dual encoder | 1,220 | 28.07 | 32.63 |
+| dual encoder | 2,440 | 29.20 | 33.09 |
+| dual encoder, no temporal transformer | 4,881 | 27.01 | 32.42 |
+| dual encoder | 4,881 | 30.09 | 33.28 |
+| + joint ITM reranker, alpha 0.002 (first version) | 4,881 | not re-scored (5.10 with the old metric) | 22.97 |
+| **+ separate reranker stage, alpha 10** | 4,881 | **30.99** | **33.89** |
+
+Metric note: runs before 2026-11-09 13:00 computed mAP with binary precision@k, which under-reports mAP compared with the official code (the official `calculate_mAP` accumulates the soft relevance when computing precision). `tempret/metrics.py` now matches the official JPoSE / C5 functions exactly on random test matrices, and the launcher marks older runs as "pre-fix metric". nDCG was always identical to the official code. The relevance matrix is computed from the class annotations with the official formula. It has not been checked against the official `caption_relevancy_EPIC_100_retrieval_test.pkl`, which is not downloaded.
 
 Implemented as described: CLIP ViT-L/14 at 224, per-frame CLS embedding after the visual projection; a 4-layer, 8-head pre-LN temporal transformer with learnable positional encodings, 4x GELU MLP, residual `X~ = T(X) + X` and masked mean pooling; EOS text embedding; Symmetric Multi-Similarity loss (m = 0.2, tau = 0.1) on the soft relevance; AdamW, lr 1.8e-5, batch 64, cosine schedule, 2x lr for temporal layers; Top-K = 1000 reranking with a cross-encoder + ITM head, row-minimum miss penalty, `S = norm(ITM) + 0.002 * norm(S_init)`. Relevance is the official `0.5 * verb IoU + 0.5 * noun-set IoU`; metrics follow the official mAP / nDCG code.
 

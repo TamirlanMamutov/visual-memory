@@ -109,7 +109,7 @@ def split_holdout(df, frac, seed):
     rng = np.random.default_rng(seed)
     n = max(1, int(round(frac * len(vids)))) if frac > 0 else 0
     held = set(rng.choice(vids, n, replace=False)) if n else set()
-    return df[~df.video_id.isin(held)], df[df.video_id.isin(held)], sorted(held)
+    return df[~df.video_id.isin(held)], df[df.video_id.isin(held)], sorted(str(v) for v in held)
 
 
 def train_reranker(model, cross, fit_df, held_df, make_loader, tokenize_fn, args, dev, amp, log):

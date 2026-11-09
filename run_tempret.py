@@ -97,7 +97,7 @@ class Clips(Dataset):
 def build(args, dev, log):
     import open_clip
     if args.checkpoint:   # architecture comes from the checkpoint, not the current form settings
-        saved = torch.load(args.checkpoint, map_location='cpu').get('args', {})
+        saved = torch.load(args.checkpoint, map_location='cpu', weights_only=False).get('args', {})
         for k in ('backbone', 'pretrained', 'layers', 'heads', 'no_temporal'):
             if k in saved and getattr(args, k) != saved[k]:
                 log(f'Using checkpoint setting {k}={saved[k]} (requested {getattr(args, k)})'); setattr(args, k, saved[k])
@@ -110,7 +110,7 @@ def build(args, dev, log):
     width = clip_model.ln_final.weight.shape[0]
     cross = None if args.no_rerank else CrossEncoder(model.dim, width).to(dev)
     if args.checkpoint:
-        ck = torch.load(args.checkpoint, map_location=dev)
+        ck = torch.load(args.checkpoint, map_location=dev, weights_only=False)
         missing = model.load_state_dict(ck['model'], strict=False)
         log('Loaded', args.checkpoint, '| params not in checkpoint (kept pretrained):', len(missing.missing_keys))
         if args.rerank_only:
@@ -199,10 +199,11 @@ def main():
 
     config = dict(vars(args), train_clips=len(train_df), test_clips=len(test_df), eval_sentences=int(rel.shape[1]),
                   full_benchmark=len(test_df) == len(test_full), cache=str(CACHE), torch=torch.__version__,
+                  map_definition='official',   # soft precision@k, as in the JPoSE / C5 evaluation code
                   paper='TempRet, arXiv 2605.24470: 67.97 mAP / 82.92 nDCG (EK-100 MIR test server)')
     write_json(out / 'config.json', config)
     history = []
-    ck_alpha = torch.load(args.checkpoint, map_location='cpu').get('rerank_alpha') if args.checkpoint else None
+    ck_alpha = torch.load(args.checkpoint, map_location='cpu', weights_only=False).get('rerank_alpha') if args.checkpoint else None
     make_loader = lambda df, train: DataLoader(Clips(df, tokenize(tokenizer, df.narration), args.frames, train, feats),
                                                batch_size=256, num_workers=0 if feats is not None else args.workers)
 
@@ -233,7 +234,7 @@ def main():
     ck_dir = CACHE / 'tempret' / 'checkpoints' / out.name; ck_dir.mkdir(parents=True, exist_ok=True)
     if args.rerank_only:
         if cross is None: raise SystemExit('--rerank-only cannot be combined with --no-rerank.')
-        state = torch.load(args.checkpoint, map_location='cpu')
+        state = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
         state['args'] = dict(state.get('args', {}), **{k: v for k, v in vars(args).items() if k.startswith(('reranker', 'itm', 'holdout', 'rerank_k'))})
         state['first_stage_checkpoint'] = args.checkpoint
         print('Starting reranker', flush=True)
@@ -308,7 +309,7 @@ def main():
         with (out / 'history.jsonl').open('a') as f: f.write(json.dumps(history[-1]) + '\n')
 
     print('Starting final evaluation', flush=True)
-    ck = torch.load(ck_dir / 'best.pt', map_location=dev)
+    ck = torch.load(ck_dir / 'best.pt', map_location=dev, weights_only=False)
     model.load_state_dict(ck['model'], strict=False)
     log(f'Best epoch {ck["epoch"]}:')
     alpha = resolve_alpha(args)

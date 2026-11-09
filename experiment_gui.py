@@ -147,6 +147,8 @@ def saved_metrics():
         cfg = _load(run / 'config.json') or {}
         desc = f"{cfg.get('backbone', '?')} {cfg.get('mode', '')}"
         scope = 'full' if cfg.get('full_benchmark') else f"subset {cfg.get('test_clips', '?')} clips"
+        if cfg and cfg.get('map_definition') != 'official':
+            scope += '; mAP under-reported (pre-fix metric)'
         res = _load(run / 'metrics.json')
         if res and 'final' in res:
             ep = cfg.get('epochs', 0)

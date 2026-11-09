@@ -80,7 +80,10 @@ def extract_frames(df, log=print, overwrite=False):
     import av
     import cv2
     FRAME_CACHE.mkdir(parents=True, exist_ok=True)
-    todo = df if overwrite else df[[not (FRAME_CACHE / f'{n}.pkl').exists() for n in df.index]]
+    if len(df) == 0:
+        return
+    # np.array: an empty plain list would select columns instead of rows
+    todo = df if overwrite else df[np.array([not (FRAME_CACHE / f'{n}.pkl').exists() for n in df.index], dtype=bool)]
     log(f'Frame extraction: {len(df) - len(todo)} clips cached, {len(todo)} to decode '
         f'from {todo.video_id.nunique()} videos into {FRAME_CACHE}')
     for v_i, (video_id, clips) in enumerate(todo.groupby('video_id')):

@@ -5,12 +5,16 @@ import numpy as np
 
 
 def mean_ap(sim, rel):
+    """Official EK-100 MIR mAP (JPoSE src/evaluation/mAP.py): AP is taken at
+    the ranks of fully relevant items (relevance == 1), but precision@k counts
+    the *soft* relevance of everything ranked so far, so partial matches
+    contribute fractional hits. This is how the leaderboard computes it."""
     order = np.argsort(-sim, axis=1, kind='stable')
-    r = np.take_along_axis(rel, order, 1) == 1
-    cum = np.cumsum(r, 1)
-    prec = cum / np.arange(1, r.shape[1] + 1)
-    n_rel = r.sum(1)
-    ap = (prec * r).sum(1) / np.maximum(n_rel, 1)
+    ranked = np.take_along_axis(rel, order, 1)
+    hit = ranked == 1
+    prec = np.cumsum(ranked, 1) / np.arange(1, ranked.shape[1] + 1)
+    n_rel = hit.sum(1)
+    ap = (prec * hit).sum(1) / np.maximum(n_rel, 1)
     return float(ap[n_rel > 0].mean())
 
 
