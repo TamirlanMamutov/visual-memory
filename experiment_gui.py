@@ -73,6 +73,8 @@ def tempret_args(o):
          '--max-test-clips', _int(o['max_test'], 'Max test clips', 0, 10**7)]
     if o['no_temporal']: a.append('--no-temporal')
     if o['no_rerank']: a.append('--no-rerank')
+    if o['mode'] == 'full':   # full fine-tuning on 12 GB: gradient caching (exact batch) + 8-bit AdamW
+        a += ['--chunk-size', '8', '--optimizer', 'adamw8bit']
     return a
 
 

@@ -60,7 +60,7 @@ Deviations / assumptions:
 | Item | Paper | Here |
 |---|---|---|
 | Embedding size | "D = 512" with ViT-L/14 | CLIP's own width (768 for ViT-L/14); 512 would break the pretrained alignment |
-| Visual tower | fine-tuned | default `--mode frozen` (cached features; 12 GB GPU). `--mode full` fine-tunes end to end, batch is memory-limited |
+| Visual tower | fine-tuned | default `--mode frozen` (cached features; 12 GB GPU). `--mode full` fine-tunes both towers end to end at the paper's batch 64 via gradient caching (`--chunk-size 8`, exact full-batch SMS gradient, verified against an unchunked backward) and 8-bit AdamW (`--optimizer adamw8bit`): ViT-L/14, 8 frames, peak 6.4 GB, about 13.5 s/step on an RTX 4070 (about 4 h/epoch on all 67k clips) |
 | Frames per clip | not stated | 8 (from 16 stored segment centres; random within segment during training) |
 | SMS neutral threshold eps | not stated | 0.1 |
 | Cross-encoder | not specified | 4-layer, 512-wide transformer over [CLS; temporal frame tokens; CLIP text tokens], trained jointly on detached features with in-batch hard negatives |

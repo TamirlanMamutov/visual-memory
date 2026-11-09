@@ -29,7 +29,8 @@ def embed(model, loader, dev, amp):
     for x, _, _, _ in loader:
         x = x.to(dev, non_blocking=True)
         with amp():
-            feats = x if x.dim() == 3 else model.encode_frames(x)
+            # raw frames (--mode full): encode 16 clips at a time to bound activation memory
+            feats = x if x.dim() == 3 else torch.cat([model.encode_frames(x[i:i + 16]) for i in range(0, len(x), 16)])
             v, vt = model.encode_video(feats)
         V.append(v.float()); VT.append(vt.half())
     return torch.cat(V), torch.cat(VT)

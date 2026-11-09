@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from common import CACHE, Logger, device, make_run_dir, seed_everything, write_json
 from tempret import data as D
+from tempret.gradcache import sms_step
 from tempret.losses import itm_batch, sms_loss
 from tempret.metrics import evaluate, fmt
 from tempret.model import CrossEncoder, TempRet, preprocess_tensor
@@ -34,6 +35,11 @@ def parse():
     p.add_argument('--frames', type=int, default=8, help='frames per clip at train/test time (<= 16)')
     p.add_argument('--epochs', type=int, default=10, help='0 = evaluate only (zero-shot CLIP or --checkpoint)')
     p.add_argument('--batch-size', type=int, default=64)
+    p.add_argument('--chunk-size', type=int, default=0,
+                   help='gradient caching: encode the batch in chunks of this many clips; the SMS loss still sees the '
+                        'whole --batch-size (exact large-batch gradient, chunk-sized memory). 0 = off')
+    p.add_argument('--optimizer', choices=['adamw', 'adamw8bit'], default='adamw',
+                   help='adamw8bit: bitsandbytes 8-bit AdamW states (about 4x less optimizer memory)')
     p.add_argument('--lr', type=float, default=1.8e-5)
     p.add_argument('--temporal-lr-mult', type=float, default=2.0)
     p.add_argument('--itm-lr', type=float, default=1e-4)
@@ -258,11 +264,19 @@ def main():
     groups = [dict(params=backbone, lr=args.lr)]
     if temporal: groups.append(dict(params=temporal, lr=args.lr * args.temporal_lr_mult))
     if joint_itm: groups.append(dict(params=list(cross.parameters()), lr=args.itm_lr))
-    opt = torch.optim.AdamW(groups, weight_decay=args.weight_decay)
+    if joint_itm and args.chunk_size:
+        raise SystemExit('--chunk-size needs the separate reranker stage (--reranker-epochs > 0).')
+    if args.optimizer == 'adamw8bit':
+        import bitsandbytes as bnb
+        opt = bnb.optim.AdamW8bit(groups, weight_decay=args.weight_decay)
+    else:
+        opt = torch.optim.AdamW(groups, weight_decay=args.weight_decay)
     total = args.epochs * len(train_loader); warm = max(1, int(args.warmup * total))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / warm) * 0.5 * (1 + math.cos(math.pi * min(1, s / total))))
-    log(f'Training {args.epochs} epochs x {len(train_loader)} steps, batch {args.batch_size}, mode {args.mode}; '
-        f'checkpoints in {ck_dir}')
+    log(f'Training {args.epochs} epochs x {len(train_loader)} steps, batch {args.batch_size}, mode {args.mode}, '
+        f'optimizer {args.optimizer}' + (f', gradient caching in chunks of {args.chunk_size}' if args.chunk_size else '') +
+        f'; checkpoints in {ck_dir}')
+    if dev.type == 'cuda': torch.cuda.reset_peak_memory_stats(dev)
     best, step = -1, 0
     for epoch in range(1, args.epochs + 1):
         print(f'Starting epoch {epoch}', flush=True)
@@ -272,29 +286,31 @@ def main():
         for it, (x, tok, verbs, nouns) in enumerate(train_loader, 1):
             x, tok = x.to(dev, non_blocking=True), tok.to(dev)
             verbs, nouns = verbs.to(dev), nouns.to(dev)
-            with amp():
-                feats_b = x if x.dim() == 3 else model.encode_frames(x)
-                v, vtok = model.encode_video(feats_b)
-                t, ttok = model.encode_text(tok)
-                sim = v.float() @ t.float().T
-                r = D.torch_relevance(verbs, nouns)
-                loss_sms = sms_loss(sim, r, args.margin, args.tau, args.eps)
-                loss = loss_sms
-                if joint_itm:
+            opt.zero_grad(set_to_none=True)
+            if joint_itm:
+                with amp():
+                    feats_b = x if x.dim() == 3 else model.encode_frames(x)
+                    v, vtok = model.encode_video(feats_b)
+                    t, ttok = model.encode_text(tok)
+                    sim = v.float() @ t.float().T
+                    r = D.torch_relevance(verbs, nouns)
+                    loss_sms = sms_loss(sim, r, args.margin, args.tau, args.eps)
                     vi, ti, lab = itm_batch(sim, r)
                     vmask = torch.ones(vtok.shape[:2], dtype=torch.bool, device=dev)
                     logits = cross(vtok[vi].detach(), vmask[vi], ttok[ti].detach(), (tok > 0)[ti])
                     loss_itm = F.cross_entropy(logits.float(), lab)
-                    loss = loss + args.itm_weight * loss_itm
+                    loss = loss_sms + args.itm_weight * loss_itm
                     run['itm'] += loss_itm.item(); run['itm_acc'] += (logits.argmax(1) == lab).float().mean().item()
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
+                loss.backward()
+            else:
+                loss_sms = sms_step(model, x, tok, verbs, nouns, args, amp, args.chunk_size)
             torch.nn.utils.clip_grad_norm_([p for g in groups for p in g['params']], 1.0)
             opt.step(); sched.step(); step += 1
             run['sms'] += loss_sms.item()
             if it % 50 == 0 or it == len(train_loader):
                 log(f'  epoch {epoch} step {it}/{len(train_loader)} | SMS {run["sms"]/it:.4f} | '
-                    f'ITM {run["itm"]/it:.4f} acc {run["itm_acc"]/it:.3f} | {time.time()-t0:.0f}s')
+                    f'ITM {run["itm"]/it:.4f} acc {run["itm_acc"]/it:.3f} | {time.time()-t0:.0f}s' +
+                    (f' | peak GPU {torch.cuda.max_memory_allocated(dev) / 2**30:.1f} GB' if dev.type == 'cuda' else ''))
         res = run_eval(model, cross, args, test_loader, sent_tokens, rel, dev, amp, log, rerank_on=False)
         score = res['dual']['mAP']['AVG'] + res['dual']['nDCG']['AVG']
         state = dict(model={k: v for k, v in model.state_dict().items()

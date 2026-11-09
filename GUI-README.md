@@ -10,7 +10,7 @@ The launcher uses Python's built-in Tkinter interface. EPIC commands additionall
 
 ## Training tabs (TempRet and EAGLE)
 
-The **TempRet · EK-100 retrieval** and **EAGLE · Ego4D VQ2D** tabs run `run_tempret.py` and `run_eagle.py` with the GPU environment at `<drive root>\cs230-venv\env` (or `CS230_PYTHON`). Each field maps to a command-line flag; the full command appears in the command box before the run starts.
+The **TempRet · EK-100 retrieval** and **EAGLE · Ego4D VQ2D** tabs run `run_tempret.py` and `run_eagle.py` with the GPU environment at `<drive root>\cs230-venv\env` (or `CS230_PYTHON`). Each field maps to a command-line flag; the full command appears in the command box before the run starts. TempRet mode **full** (end-to-end CLIP fine-tuning) automatically adds `--chunk-size 8 --optimizer adamw8bit`, so the batch size you enter (paper: 64) is the real contrastive batch while the GPU only holds 8 clips at a time.
 
 - **TempRet:** *Decode frames + cache features* (resumable), *Train + evaluate*, *Zero-shot CLIP eval*, *Evaluate checkpoint…*, *Continue from checkpoint…* and *Train reranker on checkpoint…* (retrains only the cross-encoder, about 3 minutes, and picks the fusion weight on held-out training videos). The ablation boxes reproduce the paper's "w/o temporal" and "w/o reranking" rows. Results are labelled *subset* unless all 9,668 test clips are local.
 - **EAGLE:** *Prepare SAM pseudo-masks* (resumable, so rerun it as clips download), *Train*, *Prepare + train + evaluate*, *Evaluate checkpoint…* and *Continue from checkpoint…*, plus no-AMM / no-GLM ablations.
