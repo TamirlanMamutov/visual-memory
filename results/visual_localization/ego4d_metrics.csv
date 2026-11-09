@@ -1,0 +1,9 @@
+subset,queries,method,stAP25,tAP25,success_percent,recovery_percent
+development,51,patch,0.027,0.068,9.804,5.045
+development,51,fixed_interval_crop,0.027,0.068,13.725,9.009
+development,51,distributed_mean_crop,0.016,0.044,9.804,3.784
+development,51,distributed_recency,0.016,0.050,13.725,3.604
+holdout,33,patch,0.009,0.104,12.121,3.368
+holdout,33,fixed_interval_crop,0.009,0.104,18.182,2.526
+holdout,33,distributed_mean_crop,0.014,0.055,21.212,2.947
+holdout,33,distributed_recency,0.011,0.083,27.273,3.579
