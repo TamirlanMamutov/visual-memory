@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common import CACHE, ROOT
+from common import CACHE, ROOT, atomic_write
 
 EGO4D = ROOT / 'Ego4D' / 'v2'
 CLIPS = EGO4D / 'clips'
@@ -196,8 +196,8 @@ def build_vq_training_cache(records, sam, log=print, negatives=6, max_track=24, 
                     items.append(dict(role=role, frame=f, box=ibox,
                                       jpg=cv2.imencode('.jpg', img[:, :, ::-1], [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes(),
                                       mask=cv2.imencode('.png', mask)[1].tobytes()))
-            with vq_cache_path(r['key']).open('wb') as fh:
-                pickle.dump(dict(record=r, items=items), fh)
+            # atomic: a file under the final name is always complete, so resuming can skip it
+            atomic_write(vq_cache_path(r['key']), lambda fh: pickle.dump(dict(record=r, items=items), fh))
         reader.close()
         log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(recs)} queries')
 

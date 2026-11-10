@@ -89,7 +89,7 @@ def eagle_args(o):
     return a
 
 
-def commands(epochs='1', tempret=None, eagle=None, checkpoint=None):
+def commands(epochs='1', tempret=None, eagle=None, checkpoint=None, run_dir=None):
     n = int(epochs)
     if not 1 <= n <= 10000:
         raise ValueError('Choose between 1 and 10,000 epochs.')
@@ -118,6 +118,8 @@ def commands(epochs='1', tempret=None, eagle=None, checkpoint=None):
         if checkpoint:
             cmds['EAGLE evaluate checkpoint'] = base + ['--stage', 'evaluate', '--checkpoint', checkpoint]
             cmds['EAGLE continue training'] = base + ['--stage', 'train', '--checkpoint', checkpoint]
+        if run_dir:   # settings come from the interrupted run, so the form values are not passed
+            cmds['EAGLE resume interrupted run'] = [TRAIN_PYTHON, '-u', './run_eagle.py', '--stage', 'all', '--resume', run_dir]
     return cmds
 
 
@@ -338,7 +340,8 @@ class Launcher:
         self.buttons(tab, [('Prepare SAM pseudo-masks', 'EAGLE prepare SAM pseudo-masks'), ('Train', 'EAGLE train'),
                            ('Prepare + train + evaluate', 'EAGLE prepare + train + evaluate'),
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('EAGLE evaluate checkpoint', 'eagle')),
-                           ('Continue from checkpoint…', lambda: self.with_checkpoint('EAGLE continue training', 'eagle'))])
+                           ('Continue from checkpoint…', lambda: self.with_checkpoint('EAGLE continue training', 'eagle')),
+                           ('Resume interrupted run…', lambda: self.with_run_dir('EAGLE resume interrupted run', 'eagle-'))])
         ttk.Label(tab, text='Uses VQ2D clips in ../Ego4D/v2/clips and VISOR in ../EPIC-KITCHENS-VISOR when present. Prepare is resumable: rerun it after more clips download.\n'
                   'Evaluation searches every frame before the query frame (5 fps) and scores with the official VQ2D metrics from ../VQLoC.', style='Sub.TLabel').pack(anchor='w', pady=(8, 0))
 
@@ -363,8 +366,15 @@ class Launcher:
     def options(self, vars_):
         return {k: v.get() for k, v in vars_.items()}
 
-    def all_commands(self, checkpoint=None):
-        return commands(self.epochs.get(), self.options(self.tr), self.options(self.eg), checkpoint)
+    def all_commands(self, checkpoint=None, run_dir=None):
+        return commands(self.epochs.get(), self.options(self.tr), self.options(self.eg), checkpoint, run_dir)
+
+    def with_run_dir(self, action, prefix):
+        path = filedialog.askdirectory(title='Choose the interrupted run folder', initialdir=str(HERE / 'output'))
+        if path:
+            if not Path(path).name.startswith(prefix):
+                messagebox.showerror('Not a run folder', f'Choose an output/{prefix}… folder.'); return
+            self.start(action, run_dir=path)
 
     def with_checkpoint(self, action, kind):
         initial = CACHE / kind / 'checkpoints'
@@ -393,11 +403,11 @@ class Launcher:
             except (OSError, ValueError, KeyError):
                 continue
 
-    def start(self, action, checkpoint=None):
+    def start(self, action, checkpoint=None, run_dir=None):
         if self.busy:
             return
         try:
-            cmd = self.all_commands(checkpoint)[action]
+            cmd = self.all_commands(checkpoint, run_dir)[action]
         except ValueError as e:
             messagebox.showerror('Invalid setting', str(e)); return
         self.command.set(format_command(cmd))
@@ -511,8 +521,8 @@ def main():
     app = Launcher(root)
     if args.ui_test:
         assert app.table.get_children(), 'No saved metrics loaded'
-        cmds = app.all_commands(checkpoint='x.pt')
-        assert len(cmds) == 16, len(cmds)
+        cmds = app.all_commands(checkpoint='x.pt', run_dir='output/eagle-x')
+        assert len(cmds) == 17, len(cmds)
         print('\n'.join(f'{k}: {format_command(v)}' for k, v in cmds.items() if k.startswith(('TempRet', 'EAGLE'))))
         root.after(500, root.destroy)
     if args.integration_test:

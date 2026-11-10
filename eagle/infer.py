@@ -1,12 +1,13 @@
 """EAGLE VQ2D inference: memory initialisation with an augmented query, online
 memory updates, mask-confidence temporal scores and response-track extraction."""
+import json
 import sys
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from common import ROOT
+from common import ROOT, write_json
 from eagle import data as D
 from eagle.model import confidence, gaussian_label
 
@@ -153,8 +154,20 @@ def vq_metrics(records, predictions):
     return out
 
 
+def track_to_json(t):
+    return dict(score=t.score, bboxes=[[b.fno, b.x1, b.y1, b.x2, b.y2] for b in t.bboxes])   # floats kept
+
+
+def track_from_json(d):
+    from evaluation.structures import BBox, ResponseTrack
+    return ResponseTrack([BBox(*b) for b in d['bboxes']], score=d['score'])
+
+
 @torch.no_grad()
-def run_inference(model, records, sam, dev, args, log, batch=16):
+def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None):
+    """parts_dir: if given, each clip's predictions are saved there as
+    <clip_uid>.json when the clip finishes, and clips already saved are loaded
+    instead of recomputed (resumable evaluation)."""
     sys.path.insert(0, str(ROOT / 'VQLoC'))
     model.eval()
     by_clip = {}
@@ -162,6 +175,11 @@ def run_inference(model, records, sam, dev, args, log, batch=16):
         by_clip.setdefault(r['clip_uid'], []).append(r)
     preds = {}
     for ci, (clip_uid, recs) in enumerate(by_clip.items()):
+        part = parts_dir / f'{clip_uid}.json' if parts_dir is not None else None
+        if part is not None and part.exists():
+            saved = json.loads(part.read_text(encoding='utf-8'))
+            preds.update({k: track_from_json(v) for k, v in saved.items()})
+            continue
         reader = D.ClipReader(clip_uid, recs[0]['orig_size'])
         q_imgs = dict(reader.frames({r['visual_crop'][0] for r in recs}))
         states = []
@@ -195,8 +213,10 @@ def run_inference(model, records, sam, dev, args, log, batch=16):
             buf.append((fno, img))
             if len(buf) == batch: flush()
         if buf: flush()
-        for s in states:
-            preds[s.r['key']] = s.response_track(reader)
+        done = {s.r['key']: s.response_track(reader) for s in states}
+        preds.update(done)
         reader.close()
+        if part is not None:
+            write_json(part, {k: track_to_json(v) for k, v in done.items()})
         log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(states)} queries, {stop} frames searched')
     return preds

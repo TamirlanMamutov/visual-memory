@@ -21,7 +21,23 @@ def make_run_dir(prefix, resume=None):
 
 
 def write_json(path, obj):
-    Path(path).write_text(json.dumps(obj, indent=2, default=str), encoding='utf-8')
+    atomic_write(path, lambda f: f.write(json.dumps(obj, indent=2, default=str).encode('utf-8')))
+
+
+def atomic_write(path, write_fn):
+    """Write via <path>.tmp + rename, so an interruption never leaves a
+    half-written file under the final name (resume logic trusts existence)."""
+    path = Path(path)
+    tmp = path.with_name(path.name + '.tmp')
+    with tmp.open('wb') as f:
+        write_fn(f)
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def torch_save_atomic(obj, path):
+    import torch
+    atomic_write(path, lambda f: torch.save(obj, f))
 
 
 def seed_everything(seed):

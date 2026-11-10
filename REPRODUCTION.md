@@ -83,7 +83,16 @@ E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage train
 E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage evaluate --checkpoint E:\cs230-cache\eagle\checkpoints\<run>\last.pt
 # ablations
 E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --no-amm      # or --no-glm
+# resume an interrupted run (any stage); its own settings are reused
+E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --resume output\eagle-<run>
 ```
+
+Interruptions: every stage resumes with `--resume <run folder>`.
+- **Prepare** writes one file per query and skips finished ones.
+- **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact list of training files, which is also in `train_files.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`).
+- **Evaluation** saves each clip's predictions to `eval_parts/` as it finishes, and skips those clips on restart.
+
+All writes go through a temporary file and a rename, so an interruption never leaves a half-written file under its final name.
 
 Implemented as described: frozen DINOv2 ViT-B/14 at 448 (long side + zero padding); SAM mask of the visual crop (box + centre-point prompt) as M0; AMM with pseudo-label modulator P, target re-weighting W, a K x K x C x D query-segment kernel optimised by steepest descent with learnable delta (Eq. 1-2; 10 initial / 3 update iterations, differentiable during training); GLM DCF with the mixed least-squares / hinge residual (Eq. 4) and Gauss-Newton step length; `F_N = F_A + kappa(H_J)` and a mask decoder; Lovasz loss + rho x DCF hinge loss; AdamW, peak lr 2.5e-3, wd 0.05, 25k iterations with 2.5k warm-up and linear decay. Inference: augmented query (vertical flip, translation, blur), memories of up to 50 samples, entry threshold s_conf >= 0.6, updates in the first 100 frames then every 25, static-snapshot fallback when the filter fails on >60 % of frames, reset after confidence stays < 0.4, 5-frame median filter, 0.8 x max peak, last interval above threshold, boxes from the mask bounding rectangle. Metrics come from the official VQ2D evaluation code in `../VQLoC`.
 
