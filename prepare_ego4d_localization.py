@@ -204,6 +204,9 @@ def main() -> None:
     parser.add_argument("--val-frames", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--development-videos", type=int, default=0,
+                        help="Prepare history-only development data from this many training videos")
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     if args.image_size <= 0 or args.image_size % 14:
         parser.error("--image-size must be positive and divisible by 14")
@@ -221,6 +224,17 @@ def main() -> None:
     val_videos = {r["metadata"]["video_uid"] for r in splits["val"]}
     if train_videos & val_videos:
         raise ValueError("Source videos overlap between training and validation")
+    if args.development_videos:
+        if not 0 < args.development_videos < len(train_videos):
+            parser.error("--development-videos must leave at least one training video")
+        selected = set(np.random.default_rng(args.seed).permutation(
+            sorted(train_videos)
+        )[:args.development_videos])
+        splits = {"development": [
+            record for record in splits["train"]
+            if record["metadata"]["video_uid"] in selected
+        ]}
+        totals = {"development": totals["train"]}
 
     torch.set_num_threads(args.threads)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -237,7 +251,7 @@ def main() -> None:
         "device": str(device),
         "splits": {},
     }
-    for split in ("train", "val"):
+    for split in splits:
         sampling = "balanced" if split == "train" else "history"
         count = args.train_frames if split == "train" else args.val_frames
         destination = args.output_dir / split

@@ -2,6 +2,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -10,6 +11,7 @@ from torch.nn import functional as F
 from prepare_epic_localization import timestamp_seconds
 from spatial_localizer import SpatialLocalizer, spatial_loss
 from train_spatial_localizer import train
+from evaluate_spatial_localizer import threshold_curve
 
 
 class SpatialLocalizerTests(unittest.TestCase):
@@ -56,6 +58,31 @@ class SpatialLocalizerTests(unittest.TestCase):
         self.assertEqual(float(losses["attention_loss"].detach()), 0)
         losses["loss"].backward()
 
+    def test_assigned_box_loss_trains_target_patch_not_wrong_peak(self):
+        model = SpatialLocalizer(feature_dim=4)
+        output = model(torch.eye(4)[None, None], torch.tensor([[[1., 0., 0., 0.]] * 4]))
+        output.patch_boxes_xyxy.retain_grad()
+        losses = spatial_loss(
+            output, torch.tensor([[[0.6, 0.6, 0.9, 0.9]]]),
+            torch.ones(1, 1, dtype=torch.bool), torch.ones(1, 1, dtype=torch.bool),
+            assigned_boxes=True,
+        )
+        losses["loss"].backward()
+        gradients = output.patch_boxes_xyxy.grad[0, 0].abs().sum(-1)
+        self.assertEqual(int(gradients.argmax()), 3)
+        self.assertEqual(float(gradients[0]), 0)
+        self.assertGreater(float(gradients[3]), 0)
+
+    def test_threshold_curve_groups_ties_and_maximizes_f1(self):
+        thresholds, precision, recall, f1 = threshold_curve(
+            torch.tensor([2., 2., 1., 0.]), torch.tensor([True, False, True, False])
+        )
+        self.assertEqual(thresholds.tolist(), [2., 1., 0.])
+        self.assertAlmostEqual(float(f1.max()), 0.8, places=6)
+        self.assertEqual(float(thresholds[f1.argmax()]), 1.)
+        self.assertAlmostEqual(float(precision[0]), 0.5)
+        self.assertAlmostEqual(float(recall[-1]), 1.)
+
     def test_rejects_nonspatial_patch_layout(self):
         model = SpatialLocalizer(feature_dim=8)
         with self.assertRaisesRegex(ValueError, "square patch"):
@@ -90,6 +117,51 @@ class SpatialLocalizerTests(unittest.TestCase):
             reloaded = SpatialLocalizer(**checkpoint["model_config"])
             reloaded.load_state_dict(checkpoint["model_state_dict"], strict=True)
             self.assertTrue((root / "out" / "COMPLETE").exists())
+
+    def test_development_selection_excludes_its_videos_and_saves_final_evaluation(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for split, videos in (
+                ("train", ["fit-video", "dev-video"]),
+                ("development", ["dev-video", "dev-video"]),
+                ("val", ["final-video", "final-video"]),
+            ):
+                bundle = root / split
+                bundle.mkdir()
+                rng = np.random.default_rng(42)
+                np.save(bundle / "video_features.npy", rng.normal(size=(2, 2, 4, 8)).astype(np.float32))
+                np.save(bundle / "image_query_features.npy", rng.normal(size=(2, 4, 8)).astype(np.float32))
+                boxes = np.tile(np.array([0.1, 0.2, 0.5, 0.6], dtype=np.float32), (2, 2, 1))
+                if split == "train":
+                    boxes[1] = [0.0, 0.0, 0.9, 0.9]
+                np.save(bundle / "boxes_xyxy.npy", boxes)
+                np.save(bundle / "object_present.npy", np.array([[True, False], [False, True]]))
+                (bundle / "samples.json").write_text(json.dumps([
+                    {"video_uid": video} for video in videos
+                ]), encoding="utf-8")
+            with patch("train_spatial_localizer._run_epoch", side_effect=[
+                {"loss": 1.0, "presence_f1": 0.1, "mean_positive_iou": 0.5},
+                {"loss": 0.9, "presence_f1": 0.2, "mean_positive_iou": 0.1},
+            ]):
+                train(
+                    root / "train", root / "val", root / "out",
+                    epic_features=None, epochs=1, seed=42, auxiliary_weight=0.1,
+                    development_features=root / "development", assigned_boxes=True,
+                    positive_presence_weight=0.1, patience=1, training_box_prior=True,
+                )
+            checkpoint = torch.load(root / "out" / "calibrated.pt", weights_only=True)
+            self.assertEqual(checkpoint["epoch"], 0)
+            self.assertEqual(checkpoint["run"]["fitting_queries"], 1)
+            self.assertEqual(checkpoint["calibration"]["development_frames"], 4)
+            self.assertEqual(checkpoint["final_validation"]["queries"], 2)
+            self.assertEqual(
+                checkpoint["selection_split"], "training_source_video_disjoint_development"
+            )
+            self.assertTrue((root / "out" / "final-validation.json").exists())
+            np.testing.assert_allclose(
+                checkpoint["run"]["box_prior_from_fitting_data"], [0.4, 0.4], atol=1e-6,
+            )
+            self.assertIn("epoch zero", checkpoint["run"]["selection"])
 
 
 if __name__ == "__main__":

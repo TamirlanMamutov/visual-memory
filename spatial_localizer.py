@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from multimodal_localizer import LocalizationOutput, localization_loss
+from multimodal_localizer import LocalizationOutput, _generalized_iou, localization_loss
 
 
 class SpatialLocalizer(nn.Module):
@@ -100,8 +100,11 @@ class SpatialLocalizer(nn.Module):
 
 
 def spatial_loss(
-    output: LocalizationOutput, boxes: Tensor, present: Tensor, frame_mask: Tensor
+    output: LocalizationOutput, boxes: Tensor, present: Tensor, frame_mask: Tensor,
+    *, assigned_boxes: bool = False, positive_presence_weight: float = 1.0,
 ) -> dict[str, Tensor]:
+    if not math.isfinite(positive_presence_weight) or positive_presence_weight <= 0:
+        raise ValueError("positive_presence_weight must be finite and positive")
     losses = localization_loss(output, boxes, present, frame_mask)
     positive = present & frame_mask
     centers = SpatialLocalizer.patch_centers(output.patch_logits.shape[-1], boxes)
@@ -114,8 +117,23 @@ def spatial_loss(
         attention_loss = -(
             target_distribution * output.patch_logits[positive].log_softmax(-1)
         ).sum(-1).mean()
+        if assigned_boxes:
+            target_patch = distance.argmin(-1)
+            predicted_boxes = output.patch_boxes_xyxy[positive].gather(
+                1, target_patch[:, None, None].expand(-1, 1, 4)
+            ).squeeze(1)
+            losses["box_l1_loss"] = F.l1_loss(predicted_boxes, positive_boxes)
+            losses["giou_loss"] = (1 - _generalized_iou(predicted_boxes, positive_boxes)).mean()
     else:
         attention_loss = output.patch_logits.sum() * 0
     losses["attention_loss"] = attention_loss
-    losses["loss"] = losses["loss"] + attention_loss
+    valid_losses = F.binary_cross_entropy_with_logits(
+        output.presence_logits, present.to(output.presence_logits.dtype), reduction="none"
+    )
+    weights = torch.where(present, positive_presence_weight, 1.0) * frame_mask
+    losses["presence_loss"] = (valid_losses * weights).sum() / frame_mask.sum().clamp_min(1)
+    losses["loss"] = (
+        losses["presence_loss"] + losses["box_l1_loss"]
+        + losses["giou_loss"] + attention_loss
+    )
     return losses
