@@ -14,6 +14,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 
 from multimodal_localizer import MultimodalTemporalLocalizer, localization_loss
+from spatial_localizer import SpatialLocalizer
 
 
 _REQUIRED_ARRAYS = ("video_features", "boxes_xyxy", "object_present")
@@ -187,7 +188,7 @@ def _model_inputs(batch: dict[str, Tensor]) -> dict[str, Tensor]:
 
 
 def _run_epoch(
-    model: MultimodalTemporalLocalizer,
+    model: MultimodalTemporalLocalizer | SpatialLocalizer,
     loader: DataLoader,
     device: torch.device,
     optimizer: torch.optim.Optimizer | None = None,

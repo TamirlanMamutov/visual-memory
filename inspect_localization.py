@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 
 from experiment_paths import ROOT
 from multimodal_localizer import MultimodalTemporalLocalizer
+from spatial_localizer import SpatialLocalizer
 from prepare_ego4d_localization import normalized_box, read_frame
 from train_multimodal_localizer import FeatureBundleDataset, _box_iou, _model_inputs, _run_epoch
 
@@ -33,7 +34,7 @@ def draw_box(image: Image.Image, box: list[float], color: str) -> None:
 
 
 def export_review(
-    model: MultimodalTemporalLocalizer,
+    model: MultimodalTemporalLocalizer | SpatialLocalizer,
     dataset: FeatureBundleDataset,
     samples: list[dict],
     annotations: dict[str, dict],
@@ -141,7 +142,11 @@ def main() -> None:
         parser.error("--output-dir already exists; choose a fresh directory")
     torch.set_num_threads(4)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    model = MultimodalTemporalLocalizer(**checkpoint["model_config"])
+    model = (
+        SpatialLocalizer(**checkpoint["model_config"])
+        if checkpoint.get("model_type") == "spatial"
+        else MultimodalTemporalLocalizer(**checkpoint["model_config"])
+    )
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     dataset = FeatureBundleDataset(args.features)
     try:
