@@ -266,6 +266,97 @@ See [results/spatial-joint-localization.json](results/spatial-joint-localization
 and [FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md) for precise comparisons.
 Open `output/spatial-joint-review/review.html` to inspect improved predictions.
 
+### Longer-training diagnosis and safer model selection
+
+The later experiments did **not** establish an overall improvement over the
+recorded 0.08854-IoU joint checkpoint. Two joint-training candidates stopped
+after 20 and 43 epochs (an 80-epoch cap with patience 15). False positives
+decreased, but box IoU decreased too. A subsequent selection audit includes
+epoch zero; none of its trained epochs beats the starting matcher on
+development IoU, so the initialized candidate is retained in that audit.
+Do not substitute these experimental weights as an improved production model.
+See [results/longer-training.json](results/longer-training.json) for all outcomes.
+
+The changes address specific training/evaluation weaknesses:
+
+- `spatial_loss(..., assigned_boxes=True)` trains box refinement at the patch
+  closest to the target center, rather than at an incorrect predicted peak.
+- `--positive-presence-weight 0.1` downweights positive presence examples in
+  the response-balanced fitting sample. This is a tested heuristic, not a
+  guarantee of calibrated probabilities or a proof that label shift is solved.
+- Seven training-source videos supply 21 natural-history development queries.
+  Their videos are excluded from fitting, leaving 96 queries in 24 videos.
+  Neither the checkpoint nor the presence threshold is chosen on the 27-query
+  official-validation subset during these runs. That validation subset has
+  already been used in prior research iterations; it is not a pristine test set.
+- Early stopping monitors development IoU. The current trainer includes the
+  initialized model as a selection candidate so worse trained weights are not
+  automatically promoted. Presence thresholds maximize development F1 only.
+- An optional `--training-box-prior` initializes sizes from fitting-only
+  positive boxes. It did not improve development results enough to recommend.
+- `evaluate_spatial_localizer.py` adds response-frame AP, precision/recall,
+  false-positive counts, positive-frame IoU25 fraction, joint frame-level
+  precision/recall, and highest-score-frame query counts. None are official
+  VQ2D track metrics or stAP25.
+
+```powershell
+python .\prepare_ego4d_localization.py `
+  --output-dir .\output\ego4d-development-history `
+  --backbone dinov2_vits14 --image-size 224 `
+  --development-videos 7 --seed 42 --val-frames 64
+
+python .\train_spatial_localizer.py `
+  --train-features .\output\ego4d-dinov2-small-224\train `
+  --val-features .\output\ego4d-dinov2-small-224\val `
+  --development-features .\output\ego4d-development-history\development `
+  --epic-features .\output\epic-dinov2-nouns `
+  --output-dir .\output\spatial-development-audit `
+  --epochs 80 --patience 15 --assigned-boxes --positive-presence-weight 0.1
+```
+
+Recorded output directories already exist; choose fresh names for reruns.
+`best.pt` stores the development-selected raw model, `calibrated.pt` also
+stores its development-derived presence offset, and `final-validation.json`
+contains the final checkpoint's evaluation. Epoch log field `validation`
+means the **development** split when `--development-features` is provided;
+it does not contain per-epoch official-validation results.
+
+### Published weights and larger GPU experiments
+
+Frozen DINOv2 weights are already in use. They are pretrained visual features,
+not a paper-trained VQ2D localization checkpoint. The official
+[VQLoC README](https://github.com/hwjiang1510/VQLoC) advertises a checkpoint,
+but its Box URL returned HTTP 404 to both HEAD and GET during this investigation
+on November 10. A search of the public upstream issues and Hugging Face model
+list did not yield a verified replacement. The partner's exact model/config
+is still unknown. No official localization weights were loaded or reproduced.
+VQLoC uses a different architecture, so its checkpoint cannot simply be loaded
+into `SpatialLocalizer`; reproducing it requires that architecture, preprocessing,
+and evaluator. The existing pretrained JPoSE scores are retrieval-only.
+
+An AWS GPU VM is reasonable for a larger authorized-data experiment, not a
+prerequisite for cloning/running this repository. Start with a budgeted
+single-GPU pilot for feature extraction/inference and measure GPU memory needs
+before sizing training. Upstream VQLoC lists a much larger default training
+configuration (roughly 200 GB aggregate GPU memory); do not assume one GPU
+reproduces it unchanged.
+
+`train_spatial_localizer.py --device auto` or `--device cuda` supports placing
+the shared-head training on a GPU; CUDA requests fail explicitly if unavailable.
+The Ego4D feature extractor already selects CUDA when available. The EPIC
+extractor currently remains CPU-based. GPU execution is **not validated on
+this CPU-only laptop**. Install an appropriate CUDA-enabled PyTorch build
+on the GPU machine using PyTorch's official installation instructions.
+
+Clone the implementation branch, provide licensed media and annotations
+separately (they are not in Git), and regenerate or copy the compatible
+feature bundles. Use private storage, persistent checkpoints, budget alerts,
+and stop the instance when not needed; stopped-instance storage can still
+cost money. Start with more representative labeled VQ2D training clips,
+not all of Ego4D's unrelated tasks or all three datasets at once. More data
+may help, but poor matching, response labels, temporal modeling, and evaluation
+must also be addressed. No cloud resources have been provisioned.
+
 Run all tests with:
 
 ```powershell

@@ -39,3 +39,20 @@ and Ego4D batch order across both spatial-model ablations. Checkpoint selection
 now maximizes mean positive IoU. All comparisons are exploratory validation
 diagnostics, not test or official benchmark scores. The new local review is
 `../output/spatial-joint-review/review.html`.
+
+## Longer training and development-selection audit
+
+[longer-training.json](longer-training.json) records subsequent 20-epoch and
+43-epoch joint-training candidates plus a 15-epoch initialization-selection
+audit. These are separate runs, each capped at 80 epochs with early stopping.
+The new fitting/development split contains 96/21 queries, grouped by source
+video, and the original 27-query validation subset is evaluated after selection.
+
+Neither longer trained candidate improves overall localization over the
+previous joint checkpoint: IoU is 0.08101 and 0.07295 versus 0.08854, despite
+fewer false positives. When epoch zero is included in development selection,
+it beats the audit's trained candidates; this initialized checkpoint must
+not be described as a model that learned both tasks. We retain the previous
+joint model as the reference rather than promoting these runs.
+The experimental comparison review is
+`../output/spatial-assigned-review/review.html`.

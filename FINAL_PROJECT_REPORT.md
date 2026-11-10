@@ -6,7 +6,169 @@
 Changes are committed and pushed on that branch. Existing local changes in
 `GUI-README.md` and `experiment_gui.py` remain untouched and uncommitted.
 
-## Latest experiment: spatial matching with shared EPIC/Ego4D training
+## Latest investigation: published weights, longer training, and cloud readiness
+
+The user requested pretrained-paper settings and more training. The exact
+partner checkpoint/configuration is unknown. We investigated public sources,
+fixed concrete supervision/selection weaknesses, and ran longer experiments.
+**No overall localization improvement is demonstrated by these additional
+runs; the earlier joint checkpoint remains the reference.**
+
+### What pretrained weights do and do not mean
+
+The project already uses official pretrained DINOv2 feature weights, and the
+older EPIC/JPoSE retrieval checkpoint reproduced its expected retrieval scores.
+Neither constitutes loading a trained Ego4D localization model into our head.
+Dataset papers do not define a single interchangeable set of model weights.
+
+The current upstream [VQLoC README](https://github.com/hwjiang1510/VQLoC)
+advertises a trained checkpoint at its Box URL. On November 10, both HEAD
+and a range GET returned **HTTP 404**. We checked the public README, relevant
+upstream issues, and a Hugging Face model search without finding a verified
+replacement. [Upstream issue 11](https://github.com/hwjiang1510/VQLoC/issues/11)
+also asks about reproducing reported results; it is not evidence that our
+partner used the same setup. No official localization checkpoint was loaded.
+The advertised checkpoint belongs to a different architecture, preprocessing,
+and evaluator and cannot be safely loaded into our custom spatial head.
+
+### Diagnosed weaknesses and implemented changes
+
+- The response-balanced fitting data contains about 42.1% positive frames,
+  while the sampled validation history contains about 3.94%. This is a
+  measurable distribution mismatch, not proof it is the only cause of errors.
+- Box regression previously trained the patch selected by the model even
+  when it was spatially wrong. Optional assigned supervision now trains the
+  patch nearest the annotated center instead. A regression test verifies the
+  target patch gets box gradients rather than the incorrect winning patch.
+- Presence BCE can downweight positive examples (0.1 in the experiments),
+  and a score threshold is selected on development F1 only. These are tested
+  mitigations, not a claim that detection or probability calibration is solved.
+- Seven videos from the official training subset are reserved for a
+  history-sampled development bundle: 21 queries, 1,344 frames, 49 response
+  frames, and response coverage for 19 queries. Those source videos are
+  excluded from fitting, leaving 96 queries in 24 source videos.
+- Checkpoint selection and early stopping use this development bundle.
+  The original 27-query validation subset is evaluated after selection, not
+  at every training epoch. It has already informed earlier research choices,
+  so it is still not an untouched test set.
+- The final selection implementation includes epoch zero. A trained model
+  that performs worse than the starting matcher is no longer automatically
+  promoted merely because it is the best trained epoch.
+- Additional diagnostics report response-frame AP, precision/recall, false
+  positives, IoU25 fraction, joint frame-level box/presence metrics, and
+  highest-score-frame success counts. They are not official track metrics.
+  Presence labels mean membership in the annotated response track, not
+  exhaustive independent confirmation that the object is absent elsewhere.
+- The shared-head trainer now accepts CPU/CUDA/automatic device placement.
+  CPU behavior and unavailable-CUDA errors are the locally verifiable scope;
+  GPU execution is not exercised on this CPU-only laptop.
+
+### Actual longer-training results
+
+All new trained runs keep the shared EPIC noun task (31 segments), frozen
+DINOv2 features, seed 42, AdamW learning rate 0.0001, and an 80-epoch cap.
+Patience is 15 epochs without improved development mean IoU.
+
+| Model / experiment | Epochs executed | Selected epoch | Validation mean positive IoU | Presence F1 | False positives |
+|---|---:|---:|---:|---:|---:|
+| Previous joint reference | 10 | 3 | 0.08854 | 0.05896 | 360 |
+| Assigned-box / reweighted candidate | 20 | 5 | 0.08101 | 0.06584 | 167 |
+| Same, with fitting-only box-size initialization | 43 | 28 | 0.07295 | 0.08163 | 120 |
+| Selection audit including initialized model | 15 | **0** | 0.05361 | 0.00000 | 21 |
+
+These are **separate runs**, not a single combined 78-epoch training run.
+The previous model used all 117 training queries and official-validation
+selection, whereas the new protocol reserves development videos. Comparisons
+therefore include both model and training-protocol changes, not a matched
+causal ablation.
+
+The assigned-box candidate executed 480 EPIC auxiliary updates and its fitting
+loss fell from 6.3852 to 4.5094. The size-prior candidate executed 1,032 EPIC
+updates and fitting loss fell from 6.4033 to 4.0751. Its initial width/height
+came from fitting-only median boxes, approximately 0.0825 and 0.0861,
+excluding development and validation labels.
+
+Fewer false positives do not mean solved detection: the two candidates find
+only 8 of 68 response frames, down from 13 for the previous model. Their
+response-frame AP values are 0.04786 and 0.05016 versus 0.04660 previously.
+These scores remain low. The first candidate has just one of 27 queries
+whose highest-scoring sampled frame both belongs to the response and reaches
+IoU 0.25; the prior reference and size-prior candidate have zero. The first
+candidate can be inspected at `output/spatial-assigned-review/review.html`.
+
+The first attempt originally selected among trained epochs only. Its initial
+development IoU was 0.19681, slightly above the selected trained epoch's
+0.19454. After adding initialization to selection and rerunning, the audit
+correctly selects epoch zero and stops after 15 epochs. That checkpoint has
+**no learned EPIC/Ego4D head updates**; the 360 EPIC updates occurred in
+rejected trained candidates. It is not promoted over our earlier joint model.
+The size-prior run improves over its own lower initial development IoU,
+but remains below the standard initialized development matcher.
+
+This is evidence that more epochs alone are not delivering useful
+generalization. It does not prove a specific amount of data will fix the
+model, or that all architectures have converged.
+
+### Should we move to AWS? Is insufficient data the cause?
+
+An AWS GPU VM is reasonable for a larger experiment, but it is not required
+just to clone the code, and cloud hardware does not repair supervision,
+matching, or evaluation. We have only 96 fitting image queries under the
+new split and 31 EPIC segments; this limited diversity is a plausible
+bottleneck. We also have measured architecture and distribution weaknesses,
+no temporal track model, and no paper-trained localization checkpoint.
+It would be inaccurate to attribute all poor results to dataset size.
+
+Recommended order:
+
+1. Obtain a verified trained localization checkpoint and its exact model,
+   configuration, preprocessing, split, and metric. Reproduce its inference
+   on our labeled clips before claiming parity with a paper or a partner.
+2. Budget a single-GPU feature-extraction/inference pilot on Linux, using
+   compatible CUDA-enabled PyTorch. The current head can request CUDA; the
+   Ego4D extractor already auto-selects it, while EPIC extraction remains CPU.
+3. Clone the implementation branch and provide licensed annotations/media
+   through private storage. Git does not contain datasets, feature bundles,
+   or trained weights. Begin with a larger representative labeled VQ2D
+   training subset, not all of Ego4D's unrelated tasks or all datasets at once.
+4. Measure RAM/VRAM, disk, throughput, and cost before sizing longer training.
+   The [VQLoC authors](https://github.com/hwjiang1510/VQLoC) describe roughly
+   200 GB aggregate GPU memory for their default training configuration;
+   one commodity GPU is not a promise of full-setting reproduction.
+5. Keep budget alerts, persistent checkpoints, private dataset access, and
+   explicit shutdown procedures. EC2 compute, storage and transfer may incur
+   charges, and persistent storage can cost money after an instance is stopped.
+   Consult [AWS instance specifications](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html)
+   and current region-specific pricing before provisioning.
+6. Add denser search, temporal tracking and official VQ2D evaluation; use a
+   fresh held-out evaluation split before judging final quality.
+
+No AWS resources were created, no credentials were requested, and no spending
+was authorized. A GPU pilot and additional licensed data would remove
+practical constraints, not guarantee good results.
+
+### Persistent artifacts
+
+- Development features: `output/ego4d-development-history/development/`
+- Twenty-epoch candidate: `output/spatial-assigned-development/`
+- Forty-three-epoch candidate: `output/spatial-assigned-box-prior/`
+- Fifteen-epoch baseline-selection audit: `output/spatial-development-audit/`
+- Previous-model extended diagnostics: `output/spatial-joint-extended-metrics.json`
+- Aggregate provenance and results: `results/longer-training.json`
+
+The milestone's earlier experiment numbers remain valid historical results;
+they were not replaced with the worse follow-up runs.
+
+Validation after the final code changes: all **28 unit tests pass**, Pylance
+finds no syntax errors in the five changed/new Python files, `pip check`
+reports no broken requirements, and `git diff --check` passes. The aggregate
+results were compared against saved run metrics and checkpoints. Tests cover
+assigned-patch regression, tied-score thresholds, development-video exclusion
+from fitting/box priors, checkpoint reloading, and rejection of worse trained
+weights in favor of initialization. An explicit CUDA request on this laptop
+raises the intended unavailable-device error without creating a run folder.
+
+## Earlier experiment: spatial matching with shared EPIC/Ego4D training
 
 The subsequent November 10 experiment improves spatial overlap and makes one
 model learn from **both** sources through shared trainable parameters. This
