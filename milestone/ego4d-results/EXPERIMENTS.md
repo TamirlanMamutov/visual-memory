@@ -34,3 +34,14 @@ See [the milestone draft](main.tex) and the accompanying diagnostics for measure
 - OWLv2 box refinement at the standalone CLIP text shortlist's timestamps yielded zero qualifying tracks in the top three, tying the original grid boxes on the 22 uniquely matched queries. Eight queries with duplicate video and object-name keys were excluded. The separate standalone OWLv2 search found 1/30 qualifying tracks at rank one, with 3/30 temporal hits in the top three and stAP25 of 0.0021.
 
 - The 18-query CLIP confirmation raised Recovery from 3.32% to 4.80% on six unseen source videos with stAP25 tied at 0.028. The paired Recovery interval was 0.00 to 4.65 percentage points. Detection linking and denser rescanning have no scored result yet.
+
+## November 10 validation update
+
+The canonical sweep completed 36 batches (000–035), with 1,345 queries across 351 of 1,158 clip entries. Batch 036 stopped after its query crop decoder returned insufficient image data. Metrics were computed by merging completed predictions and running the evaluator on matched queries.
+
+| Method | stAP25 | tAP25 | Success | Recovery |
+| --- | ---: | ---: | ---: | ---: |
+| Frozen DINOv2 patch matcher | 0.020 | 0.079 | 12.19% | 4.79% |
+| Distributed proposals with mean crop score | 0.005 | 0.019 | 14.87% | 2.05% |
+
+The local temporary directory for the track-linking and denser rescanning run is no longer present. The implementation is available, and scored results remain pending.

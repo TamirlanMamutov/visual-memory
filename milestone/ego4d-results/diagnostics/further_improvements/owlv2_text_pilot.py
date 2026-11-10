@@ -22,6 +22,7 @@ model = Owlv2ForObjectDetection.from_pretrained(model_id, local_files_only=True)
 processor = Owlv2Processor.from_pretrained(model_id, local_files_only=True)
 rows = []
 linked_rows = []
+dense_rows = []
 shortlist = {}
 if len(sys.argv) > 2:
     log = Path(sys.argv[2]).read_text()
@@ -53,28 +54,40 @@ for batch in range(10, 14):
                 if not ids:
                     continue
             selection = '+'.join(f'eq(n\\,{i*stride})' for i in ids) if shortlist else f'not(mod(n\\,{stride}))'
-            raw = subprocess.check_output([ffmpeg, "-v", "error", "-i", movie, "-an", "-vf",
-                f"fps={fps}:start_time=0:round=up,select={selection},scale=448:448",
-                "-fps_mode", "passthrough", "-frames:v", str(len(ids)), "-pix_fmt", "rgb24",
-                "-f", "rawvideo", "-threads", "1", "-"])
-            frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 448, 448, 3)
-            assert len(frames) == len(ids)
             prompts = [f"a photo of a {q['object_title']}" for q in queries]
-            frame_boxes, frame_scores, proposals = [], [], []
-            for offset in range(0, len(frames), 4):
-                images = [Image.fromarray(frame) for frame in frames[offset:offset+4]]
-                inputs = processor(text=[prompts]*len(images), images=images,
-                                   do_resize=False, return_tensors="pt")
-                with torch.inference_mode():
-                    result = model(**inputs.to(device), interpolate_pos_encoding=True)
-                if not shortlist:
-                    top_scores, top_indices = result.logits.sigmoid().topk(5, dim=1)
-                    top_boxes = result.pred_boxes[:, :, None, :].expand(-1, -1, len(queries), -1)
-                    top_boxes = top_boxes.gather(1, top_indices[..., None].expand(-1,-1,-1,4))
-                    proposals.extend(zip(top_boxes.cpu().numpy(), top_scores.cpu().numpy()))
-                scores, indices = result.logits.sigmoid().max(dim=1)
-                frame_boxes.extend(result.pred_boxes.gather(1, indices[..., None].expand(-1,-1,4)).cpu().tolist())
-                frame_scores.extend(scores.cpu().tolist())
+
+            def scan(selection, count):
+                raw = subprocess.check_output([ffmpeg, "-v", "error", "-i", movie, "-an", "-vf",
+                    f"fps={fps}:start_time=0:round=up,select={selection},scale=448:448",
+                    "-fps_mode", "passthrough", "-frames:v", str(count), "-pix_fmt", "rgb24",
+                    "-f", "rawvideo", "-threads", "1", "-"])
+                frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 448, 448, 3)
+                assert len(frames) == count
+                proposals = []
+                for offset in range(0, len(frames), 4):
+                    images = [Image.fromarray(frame) for frame in frames[offset:offset+4]]
+                    inputs = processor(text=[prompts]*len(images), images=images,
+                                       do_resize=False, return_tensors="pt")
+                    with torch.inference_mode():
+                        result = model(**inputs.to(device), interpolate_pos_encoding=True)
+                    scores, indices = result.logits.sigmoid().topk(5, dim=1)
+                    boxes = result.pred_boxes[:, :, None, :].expand(-1, -1, len(queries), -1)
+                    boxes = boxes.gather(1, indices[..., None].expand(-1,-1,-1,4))
+                    proposals.extend(zip(boxes.cpu().numpy(), scores.cpu().numpy()))
+                return proposals
+
+            def spatial_candidates(proposal, query_index, width, height):
+                boxes, scores = proposal
+                center, extent = np.split(boxes[:, query_index], 2, axis=1)
+                coords = np.clip(np.concatenate((center-extent/2, center+extent/2), axis=1), 0, 1)
+                scores = scores[:, query_index]
+                keep = (scores >= scores[0] * .65) & (coords[:, 2:] > coords[:, :2]).all(1)
+                return coords[keep] * [width,height,width,height], scores[keep]
+
+            proposals = scan(selection, len(ids))
+            frame_boxes = [boxes[0] for boxes, _ in proposals]
+            frame_scores = [scores[0] for _, scores in proposals]
+            rescan = []
             for j, query in enumerate(queries):
                 crop = query["visual_crop"]
                 w, h = crop["original_width"], crop["original_height"]
@@ -108,13 +121,10 @@ for batch in range(10, 14):
                 rows.append(dict(video=video["video_uid"],title=query["object_title"],matches=matches))
                 if not shortlist:
                     detections = []
-                    for i, (boxes, scores) in enumerate(proposals[:limit]):
-                        center, extent = np.split(boxes[:, j], 2, axis=1)
-                        coords = np.clip(np.concatenate((center-extent/2, center+extent/2), axis=1), 0, 1)
-                        scores = scores[:, j]
-                        keep = (scores >= scores[0] * .65) & (coords[:, 2:] > coords[:, :2]).all(1)
-                        detections.append((i, coords[keep] * [w,h,w,h], scores[keep]))
+                    for i, proposal in enumerate(proposals[:limit]):
+                        detections.append((i, *spatial_candidates(proposal, j, w, h)))
                     linked = []
+                    windows = []
                     for track in link(detections):
                         indices, boxes, scores = zip(*track)
                         if any(abs(indices[-1]-m["index"]) <= 1 for m in linked):
@@ -129,9 +139,58 @@ for batch in range(10, 14):
                         linked.append(dict(index=indices[-1], score=float(np.mean(scores)),
                                            temporal_iou=len(times&truth)/len(times|truth),
                                            iou=spatio_temporal_iou_response_track(response,target)))
+                        windows.append((start, end, np.asarray(indices)*stride, boxes))
                         if len(linked) == 3:
                             break
                     linked_rows.append(dict(video=video["video_uid"], title=query["object_title"], matches=linked))
+                    rescan.append((j, query, w, h, target, truth, windows, linked))
+            # Densify only the shortlisted windows. Anchor each new box to its coarse track.
+            dense_stride = max(1, stride // 2)
+            requested = sorted({f for _, _, _, _, _, _, windows, _ in rescan
+                                for start, end, _, _ in windows
+                                for f in range(start, end, dense_stride)})
+            if requested:
+                # Compress contiguous windows into intervals to keep FFmpeg expressions small.
+                spans = []
+                for frame in requested:
+                    if spans and frame == spans[-1][1] + dense_stride:
+                        spans[-1][1] = frame
+                    else:
+                        spans.append([frame, frame])
+                selection = '+'.join(f'between(n\\,{a}\\,{b})*not(mod(n-{a}\\,{dense_stride}))'
+                                     for a, b in spans)
+                dense_proposals = dict(zip(requested, scan(selection, len(requested)), strict=True))
+                for j, query, w, h, target, truth, windows, linked in rescan:
+                    refined = []
+                    for (start, end, sample_ids, boxes), match in zip(windows, linked, strict=True):
+                        points, coords = [], []
+                        for frame in range(start, end, dense_stride):
+                            candidates, scores = spatial_candidates(dense_proposals[frame], j, w, h)
+                            if not len(candidates):
+                                continue
+                            anchor = np.array([np.interp(frame, sample_ids, boxes[:, k]) for k in range(4)])
+                            overlap = np.maximum(np.minimum(candidates[:, 2:], anchor[2:]) -
+                                                 np.maximum(candidates[:, :2], anchor[:2]), 0).prod(1)
+                            union = (candidates[:, 2:] - candidates[:, :2]).prod(1) + np.prod(anchor[2:]-anchor[:2]) - overlap
+                            ious = overlap / np.maximum(union, 1e-8)
+                            best = np.argmax(scores * ious)
+                            if ious[best] >= .15:
+                                points.append(frame)
+                                coords.append(candidates[best])
+                        if not points:
+                            refined.append(match)
+                            continue
+                        # Use the span supported by dense detections and interpolate its boxes.
+                        times = range(points[0], min(end, points[-1]+dense_stride))
+                        interpolated = np.stack([np.interp(times, points, np.asarray(coords)[:, k])
+                                                 for k in range(4)], axis=1)
+                        response = ResponseTrack([BBox(f,*b) for f,b in zip(times,interpolated)])
+                        refined.append(dict(match, temporal_iou=len(set(times)&truth)/len(set(times)|truth),
+                                            iou=spatio_temporal_iou_response_track(response,target)))
+                    dense_rows.append(dict(video=video["video_uid"], title=query["object_title"], matches=refined))
+            elif rescan:
+                dense_rows.extend(dict(video=video["video_uid"], title=query["object_title"], matches=linked)
+                                  for _, query, _, _, _, _, _, linked in rescan)
             print(uid,len(rows),flush=True)
 rows.sort(key=lambda row: row["matches"][0]["score"] if row["matches"] else 0, reverse=True)
 hits=np.cumsum([bool(r["matches"]) and r["matches"][0]["iou"]>=.25 for r in rows])
@@ -142,4 +201,7 @@ print(json.dumps(dict(queries=len(rows),videos=len({r["video"] for r in rows}),
     linked_top1=sum(bool(r["matches"]) and r["matches"][0]["iou"]>=.25 for r in linked_rows),
     linked_top3=sum(any(m["iou"]>=.25 for m in r["matches"]) for r in linked_rows),
     linked_temporal_top3=sum(any(m["temporal_iou"]>=.25 for m in r["matches"]) for r in linked_rows),
-    per_query=rows, linked_per_query=linked_rows),indent=2))
+    dense_top1=sum(bool(r["matches"]) and r["matches"][0]["iou"]>=.25 for r in dense_rows),
+    dense_top3=sum(any(m["iou"]>=.25 for m in r["matches"]) for r in dense_rows),
+    dense_temporal_top3=sum(any(m["temporal_iou"]>=.25 for m in r["matches"]) for r in dense_rows),
+    per_query=rows, linked_per_query=linked_rows, dense_per_query=dense_rows),indent=2))

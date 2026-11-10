@@ -58,7 +58,23 @@ In a separate CLIP reranking pilot on 30 Ego4D queries, image crops, object-name
 On 18 queries from six unseen source videos, CLIP box reranking raised Recovery from 3.32\% to 4.80\% at fixed time windows and confidence, with stAP$_{25}$ tied at 0.028. The paired 95\% bootstrap interval was 0.00 to 4.65 percentage points. Four extra frames were recovered across two videos. On the 30-query standalone text pilot, OWLv2 found one qualifying track at rank one and had three temporal hits in the top three. The CLIP grid found zero qualifying tracks and five temporal hits in the top three. Replacing grid boxes at fixed shortlist timestamps yielded zero qualifying tracks on 22 uniquely matched queries.
 
 \section{Ongoing evaluation}
-As of November 9, the canonical Ego4D validation sweep had completed at least 26 batches and 973 queries. The run uses frozen DINOv2 inference with fixed settings. Hyperparameter sweeps use cached predictions separately. The standalone text search found a qualifying temporal window in the top three for 5/30 queries, but none reached spatio-temporal IoU $\geq 0.25$. Adaptive trimming improved both stAP$_{25}$ and Recovery on 36 queries from one new source video, while an earlier 80-query check favored the raw matcher. Small box proposals increased oracle coverage on sampled frames, but reduced Recovery on the 15-query full-track check. We retain the raw matcher as the default. Rotated crops and entries without a canonical clip ID require separate handling for full coverage. VQLoC and RELOCATE provide published stAP$_{25}$ references on their reported validation sets \citep{vqloc,relocate}. The results above use subsets of validation. Detection linking and denser rescanning are planned follow-up evaluations.
+As of November 10, 2026, the canonical Ego4D validation sweep had completed 36 batches (000--035), covering 1,345 queries across 351 of 1,158 clip entries. Batch 036 stopped when the query crop decoder returned insufficient image data. Table~\ref{tab:partial-sweep} pools completed predictions before scoring.
+
+\begin{table}[ht]
+\centering
+\caption{Partial Ego4D VQ2D validation on 1,345 matched queries.}
+\label{tab:partial-sweep}
+\begin{tabular}{lrrrr}
+\toprule
+Method & stAP$_{25}$ & tAP$_{25}$ & Success & Recovery \\
+\midrule
+Frozen DINOv2 patch matcher & 0.020 & 0.079 & 12.19\% & 4.79\% \\
+Distributed proposals with mean crop score & 0.005 & 0.019 & 14.87\% & 2.05\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The run uses frozen DINOv2 inference with fixed settings. Hyperparameter sweeps use cached predictions separately. The standalone text search found a qualifying temporal window in the top three for 5/30 queries, but none reached spatio-temporal IoU $\geq 0.25$. Adaptive trimming improved both stAP$_{25}$ and Recovery on 36 queries from one new source video, while an earlier 80-query check favored the raw matcher. Small box proposals increased oracle coverage on sampled frames, but reduced Recovery on the 15-query full-track check. We retain the raw matcher as the default. Rotated crops and entries without a canonical clip ID require separate handling for full coverage. VQLoC and RELOCATE provide published stAP$_{25}$ references on their reported validation sets \citep{vqloc,relocate}. The results above use subsets of validation. Detection linking and denser rescanning are planned follow-up evaluations.
 
 \begin{thebibliography}{9}
 \bibitem{epic} D. Damen et al. Rescaling egocentric vision: Collection, pipeline and challenges for EPIC-KITCHENS-100. \emph{IJCV}, 2022.
