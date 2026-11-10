@@ -26,7 +26,7 @@ import torch.nn.functional as F
 from common import CACHE, Logger, device, make_run_dir, seed_everything, torch_save_atomic, write_json
 from eagle import data as D
 from eagle.infer import UPDATE_CONF, run_inference, vq_metrics
-from eagle.model import EAGLE, confidence, dcf_hinge, gaussian_label, lovasz_hinge
+from eagle.model import EAGLE, confidence, dcf_hinge, gaussian_label, lovasz_hinge, pixel_losses
 
 
 def parse():
@@ -40,6 +40,8 @@ def parse():
     p.add_argument('--batch-size', type=int, default=4, help='sequences per step (not given in the paper)')
     p.add_argument('--seq-len', type=int, default=4, help='frames per training sequence incl. the query (N)')
     p.add_argument('--rho', type=float, default=1.0, help='weight of L_tck')
+    p.add_argument('--seg-loss', choices=['lovasz+pixel', 'lovasz'], default='lovasz+pixel',
+                   help='paper: Lovasz only, which collapsed to an empty mask here; default adds BCE + Dice')
     p.add_argument('--init-iters', type=int, default=10); p.add_argument('--update-iters', type=int, default=3)
     p.add_argument('--no-amm', action='store_true'); p.add_argument('--no-glm', action='store_true')
     p.add_argument('--no-visor', action='store_true')
@@ -110,7 +112,8 @@ def boxes_of(masks_np):
 
 def train_step(model, batch, args, dev):
     """batch: list of sequences [(img, mask), ...]; first frame = query/reference."""
-    loss_seg, loss_tck, n_frames, hits = 0.0, 0.0, 0, 0
+    loss_seg, loss_tck, n_frames = 0.0, 0.0, 0
+    st = dict(pos=0, pos_hit=0, pos_iou=0.0, neg=0, neg_ok=0)
     flip = random.random() < 0.5
     for seq in batch:
         imgs = np.stack([s[0] for s in seq]); masks = np.stack([s[1] for s in seq])
@@ -130,16 +133,22 @@ def train_step(model, batch, args, dev):
             ft = {k: v[t:t + 1] for k, v in f.items()}
             logits, hj = model.segment(ft, sigma, c)
             loss_seg = loss_seg + lovasz_hinge(logits, mt[t:t + 1])
+            if args.seg_loss == 'lovasz+pixel':
+                bce, dice = pixel_losses(logits, mt[t:t + 1])
+                loss_seg = loss_seg + bce + dice
             loss_tck = loss_tck + dcf_hinge(hj, gauss[t:t + 1], region[t:t + 1])
             n_frames += 1
             pred = (logits.detach() > 0).float()
-            hits += int(((pred * mt[t:t + 1]).sum() / ((pred + mt[t:t + 1]).clamp(max=1).sum()).clamp(min=1)).item() > 0.5) \
-                if mt[t].sum() > 0 else int(pred.sum() == 0)
+            if mt[t].sum() > 0:    # object visible: IoU of the predicted mask
+                iou = ((pred * mt[t:t + 1]).sum() / (pred + mt[t:t + 1]).clamp(max=1).sum()).item()
+                st['pos'] += 1; st['pos_iou'] += iou; st['pos_hit'] += int(iou > 0.5)
+            else:                  # object-free frame: correct if the mask is empty
+                st['neg'] += 1; st['neg_ok'] += int(pred.sum() == 0)
             if t < len(seq) - 1 and confidence(logits.detach())[0] >= UPDATE_CONF:
                 mem_f.append(ft['seg']); mem_m.append(logits.detach().sigmoid())
                 sigma = model.amm.optimise(sigma, torch.cat(mem_f), torch.cat(mem_m), args.update_iters, True)
     loss_seg, loss_tck = loss_seg / n_frames, loss_tck / n_frames
-    return loss_seg, loss_tck, hits / n_frames
+    return loss_seg, loss_tck, st
 
 
 def rng_state(sampler):
@@ -208,23 +217,28 @@ def train(model, args, out, dev, log):
     log(f'Training {args.iters} iterations, batch {args.batch_size} x {args.seq_len} frames; '
         f'resumable save every {args.save_every}; checkpoints in {ck_dir}')
     model.train()
-    t0, acc = time.time(), dict(seg=0.0, tck=0.0, hit=0.0, n=0)
+    fresh = lambda: dict(seg=0.0, tck=0.0, n=0, pos=0, pos_hit=0, pos_iou=0.0, neg=0, neg_ok=0)
+    t0, acc = time.time(), fresh()
     for it in range(start, args.iters + 1):
         batch = [sampler.sample() for _ in range(args.batch_size)]
-        seg, tck, hit = train_step(model, batch, args, dev)
+        seg, tck, st = train_step(model, batch, args, dev)
         loss = seg + args.rho * tck
         opt.zero_grad(set_to_none=True); loss.backward()
         torch.nn.utils.clip_grad_norm_(params, 1.0)
         opt.step(); sched.step()
-        acc['seg'] += seg.item(); acc['tck'] += tck.item(); acc['hit'] += hit; acc['n'] += 1
+        acc['seg'] += seg.item(); acc['tck'] += tck.item(); acc['n'] += 1
+        for k, v in st.items(): acc[k] += v
         if it % args.log_every == 0 or it == args.iters:
             n = acc['n']
-            row = dict(iter=it, seg=acc['seg'] / n, tck=acc['tck'] / n, frame_iou50=acc['hit'] / n,
+            row = dict(iter=it, seg=acc['seg'] / n, tck=acc['tck'] / n,
+                       pos_iou50=acc['pos_hit'] / max(1, acc['pos']), pos_miou=acc['pos_iou'] / max(1, acc['pos']),
+                       neg_empty=acc['neg_ok'] / max(1, acc['neg']),
                        lr=sched.get_last_lr()[0], seconds=round(time.time() - t0, 1))
             log(f"  iter {it}/{args.iters} | L_seg {row['seg']:.4f} | L_tck {row['tck']:.5f} | "
-                f"frames IoU>0.5 {row['frame_iou50']:.3f} | lr {row['lr']:.2e} | {row['seconds']:.0f}s")
+                f"object frames: IoU>0.5 {row['pos_iou50']:.3f}, mIoU {row['pos_miou']:.3f} | "
+                f"empty frames correct {row['neg_empty']:.3f} | lr {row['lr']:.2e} | {row['seconds']:.0f}s")
             with (out / 'history.jsonl').open('a') as f: f.write(json.dumps(row) + '\n')
-            acc = dict(seg=0.0, tck=0.0, hit=0.0, n=0)
+            acc = fresh()
         if it % args.save_every == 0 or it == args.iters:
             save(it)
     return last

@@ -180,7 +180,9 @@ def saved_metrics():
             if lines:
                 h = json.loads(lines[-1])
                 rows.append((run.name, f"EAGLE training [iter {h['iter']}]",
-                             f"L_seg {h['seg']:.4f} · L_tck {h['tck']:.5f} · frames IoU>0.5 {h['frame_iou50']:.3f}"))
+                             f"L_seg {h['seg']:.4f} · L_tck {h['tck']:.5f} · "
+                             + (f"object IoU>0.5 {h['pos_iou50']:.3f} · mIoU {h['pos_miou']:.3f} · empty ok {h['neg_empty']:.3f}"
+                                if 'pos_iou50' in h else f"frames IoU>0.5 {h['frame_iou50']:.3f} (old metric)")))
     rows.sort(key=lambda r: (re.search(r'\d{8}-\d{6}', r[0]) or re.search('', '')).group(0), reverse=True)  # newest first
     reference = HERE / 'results' / 'baseline.json'
     if reference.exists():

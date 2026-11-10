@@ -103,6 +103,7 @@ Deviations / assumptions:
 | Backbone | DINOv2 fine-tuned on EgoTracks, then frozen | pretrained DINOv2, frozen (no EgoTracks fine-tuning yet) |
 | Decoder, P/W nets, kernel sizes, D | not specified | LWL-style choices: 256-ch reduced features, D = 16, 3 x 3 sigma, 5 x 5 DCF, light RGB stem for boundaries |
 | Tracking during training | frozen pretrained tracker | no pretrained tracker exists here; its feature reducer is trained with L_tck |
+| Segmentation loss | Lovasz | Lovasz + BCE (foreground weight 10) + Dice, output bias initialised to -4 (`--seg-loss lovasz` restores the paper's). Lovasz alone collapsed on VQ2D (objects cover about 0.5 % of a frame): by iteration 1,000 the decoder output logit 0 over the whole image and never segmented anything. With the extra terms, an 800-iteration test reached 0.16 mIoU on object frames |
 | rho, batch size, sequence length N | not stated | 1.0, 4 sequences, 4 frames |
 | Training negatives | not mentioned | one object-free frame per VQ2D sequence, so confidence is low when the object is absent |
 | Memory crops | crop-and-resize before insertion | full frames, which keeps query and search frames at the same scale |

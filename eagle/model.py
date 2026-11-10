@@ -176,6 +176,9 @@ class Decoder(nn.Module):
         self.up1 = conv_bn_relu(width, 64)
         self.up2 = conv_bn_relu(64 + 32, 64)
         self.out = nn.Conv2d(64, 1, 3, padding=1)
+        # Start from "mostly background" (VQ2D objects cover ~0.5 % of a frame) rather than logit 0,
+        # the flat point where a Lovasz-only decoder got stuck.
+        nn.init.constant_(self.out.bias, -4.0)
 
     def forward(self, enc, feats, image):
         x = self.inp(torch.cat([enc, feats], 1))
@@ -238,6 +241,18 @@ def lovasz_hinge(logits, labels):
         jac[1:] = jac[1:] - jac[:-1]
         losses.append(torch.dot(F.relu(errors_sorted), jac))
     return torch.stack(losses).mean()
+
+
+def pixel_losses(logits, labels, pos_weight=10.0):
+    """Per-pixel BCE (foreground up-weighted) + soft Dice, averaged over images.
+    Dice is skipped on object-free frames, where BCE alone pushes the mask to empty."""
+    lg, lb = logits.flatten(1), labels.flatten(1).float()
+    bce = F.binary_cross_entropy_with_logits(lg, lb, pos_weight=lg.new_tensor(pos_weight))
+    p = lg.sigmoid()
+    has = lb.sum(1) > 0
+    dice = 1 - (2 * (p * lb).sum(1) + 1) / (p.sum(1) + lb.sum(1) + 1)
+    dice = dice[has].mean() if has.any() else lg.new_zeros(())
+    return bce, dice
 
 
 def dcf_hinge(response, gauss, region, threshold=0.05):
