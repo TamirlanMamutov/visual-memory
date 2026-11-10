@@ -278,15 +278,23 @@ def main() -> None:
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--temporal-layers", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     args = parser.parse_args()
     if args.epochs <= 0 or args.batch_size <= 0:
         parser.error("--epochs and --batch-size must be positive")
+    if args.threads <= 0:
+        parser.error("--threads must be positive")
     if args.learning_rate <= 0 or args.weight_decay < 0:
         parser.error("--learning-rate must be positive and --weight-decay nonnegative")
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("--device cuda was requested but CUDA is unavailable")
+    if args.train_features.resolve() == args.val_features.resolve():
+        parser.error("Training and validation must use separate feature bundles")
+    if args.output_dir.exists():
+        parser.error("--output-dir already exists; choose a fresh directory")
 
+    torch.set_num_threads(args.threads)
     _seed_everything(args.seed)
     train_data = FeatureBundleDataset(args.train_features)
     val_data = FeatureBundleDataset(args.val_features)
@@ -318,6 +326,11 @@ def main() -> None:
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "run.json").write_text(
+        json.dumps({key: str(value) if isinstance(value, Path) else value
+                    for key, value in vars(args).items()}, indent=2),
+        encoding="utf-8",
+    )
     metrics_path = args.output_dir / "metrics.jsonl"
     best_val_loss = float("inf")
 
@@ -372,6 +385,7 @@ def main() -> None:
             print(json.dumps(record, allow_nan=False), flush=True)
     train_data.close()
     val_data.close()
+    (args.output_dir / "COMPLETE").touch()
 
 
 if __name__ == "__main__":

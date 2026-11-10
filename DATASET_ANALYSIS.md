@@ -3,6 +3,35 @@
 This note describes the project workspace as inspected on 2026-11-09. Dataset
 counts are a local snapshot, not official dataset totals.
 
+## November 10 update: Ego4D subset added
+
+The earlier missing-media statements below describe the November 9 snapshot.
+There are now 39 non-empty MP4 clips (2,131,649,333 bytes) under the sibling
+`Ego4D/v2/clips` directory. Clip IDs match **117 training queries in 31 clips**
+and **27 validation queries in 8 clips** in the existing processed VQ2D
+annotations. This is not the complete dataset.
+
+`prepare_ego4d_localization.py` now reads the matching clips, reconstructs the
+canonical query crops using visual-crop annotations, maps annotation frame
+numbers to the media FPS, and extracts frozen DINOv2 patch features. Separate
+query-crop images and full-scale source videos are not required for this new
+clip-based path. The original upstream VQLoC loader is unchanged.
+
+The new localization trainer uses a task-specific feature bundle:
+float32 video patch features `[N,T,P,C]`, visual query patch features `[N,Q,C]`,
+normalized padded-image XYXY boxes `[N,T,4]`, and boolean presence/validity
+masks. This spatial feature bundle is distinct from JPoSE's pooled retrieval
+features and is documented in the README. It is not a conversion of all
+three datasets to interchangeable supervision.
+
+Training frame selection balances annotated response and non-response
+frames. Validation uniformly samples only the history before the query time,
+without consulting response boxes; short response tracks may be missed.
+These are sparse frame-level prototype diagnostics, not the official
+exhaustive VQ2D benchmark. Only the image-query path is prepared; text and
+combined query training still need encoders and verified query/target labels.
+Ego-Exo4D and EPIC localization-label limitations below remain unchanged.
+
 ## Project shape
 
 The workspace combines several related but distinct projects:

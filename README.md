@@ -138,14 +138,76 @@ python .\train_multimodal_localizer.py `
   --epochs 20 --batch-size 8 --learning-rate 0.0003
 ```
 
-The run writes `last.pt`, the lowest-validation-loss `best.pt`, and per-epoch
-`metrics.jsonl`. It reports presence F1 and mean IoU on positive frames; these
-are prototype diagnostics, **not** the official VQ2D/stAP25 evaluation. The
-feature-bundle contract and a synthetic train/validation pass are unit tested.
-No real localization training was run: the local VQ2D annotations are not
-paired with the required query crops and videos, and this worktree has no
-localization feature bundles. A complete raw-media feature extractor and
-official benchmark adapter remain future work.
+The run writes `last.pt`, the lowest-validation-loss `best.pt`, per-epoch
+`metrics.jsonl`, the configuration in `run.json`, and a `COMPLETE` marker.
+It refuses to overwrite an existing output directory or use the same bundle
+for both training and validation. It reports presence F1 and mean IoU on
+positive frames; these are prototype diagnostics, **not** official VQ2D/stAP25
+evaluation.
+
+### Preparing downloaded Ego4D clips
+
+The November 10 local download contains 39 non-empty clips under
+`Ego4D/v2/clips`, matching 117 training queries (31 clips) and 27 validation
+queries (8 clips) in the sibling `VQLoC/data/*_anno_new.json` files.
+This is a small subset, not the full Ego4D dataset.
+
+```powershell
+python -m pip install -r .\requirements-localization.txt
+
+# CPU-sized initial experiment: frozen DINOv2 ViT-S/14 at 224 pixels.
+python .\prepare_ego4d_localization.py `
+  --output-dir .\output\ego4d-dinov2-small-224 `
+  --backbone dinov2_vits14 --image-size 224
+
+python .\train_multimodal_localizer.py `
+  --train-features .\output\ego4d-dinov2-small-224\train `
+  --val-features .\output\ego4d-dinov2-small-224\val `
+  --output-dir .\output\ego4d-localizer-first-run `
+  --epochs 10 --batch-size 2 --hidden-dim 64 --num-heads 4 --temporal-layers 1
+
+python .\inspect_localization.py `
+  --features .\output\ego4d-dinov2-small-224\val `
+  --checkpoint .\output\ego4d-localizer-first-run\best.pt `
+  --output-dir .\output\ego4d-localizer-review
+```
+
+Open `output/ego4d-localizer-review/review.html` to view query crops,
+predicted boxes in red, and ground-truth boxes in green. The review shows
+the highest-presence sampled frame and a separately labeled ground-truth
+positive diagnostic frame when one was sampled. It also exports all sampled
+frame predictions to `predictions.json`, with clip timestamps and boxes in
+both padded-image and original-image coordinates.
+
+The preparer:
+
+- Selects only annotations whose clip files exist, reporting matched and
+  total counts; rejects overlapping source videos across train/validation.
+- Converts the annotations' 5-FPS frame IDs to each video's actual FPS
+  rather than using annotation indices directly on 30-FPS media.
+- Extracts the canonical visual query crop directly from its annotated
+  clip frame. Separate query-image downloads are therefore unnecessary.
+- Applies centered square padding, bicubic resize, and ImageNet normalization;
+  adjusts response boxes for the identical padding geometry.
+- Freezes a pretrained DINOv2 encoder downloaded from Meta's public weights,
+  using pinned upstream code. First use needs internet access and disk space.
+- Uses 16 balanced positive/negative training frames per query, and 64
+  uniformly sampled pre-query validation frames. **Validation frame selection
+  never uses response boxes.** Sparse sampling can miss short response tracks;
+  `preparation.json` reports positive-frame/query coverage. No temporal
+  interpolation or padding frames are scored as labeled positives.
+- Saves float32 feature/box arrays, boolean masks, per-sample provenance in
+  `samples.json`, and preprocessing details in `preparation.json`. Only use
+  bundles after their parent directory contains `COMPLETE`.
+
+Defaults are ViT-B/14 at 448 pixels, matching the proposed backbone/size;
+the explicit ViT-S/14/224 command above is a cheaper CPU baseline, not the
+full proposed configuration. Both runs here are image-query only: text
+encoding, verified text-query labels, interaction cues, exhaustive temporal
+search and official benchmark evaluation remain unimplemented. EPIC retrieval
+and Ego-Exo4D videos are **not** silently mixed into this localization run.
+Generated features, checkpoints, review images, and licensed media stay local,
+outside Git. Use a fresh output directory for each command rerun.
 
 Run the contract tests with:
 
