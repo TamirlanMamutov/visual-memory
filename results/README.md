@@ -24,3 +24,18 @@ The existing GUI does not display this localization run.
 See [the latest project report](../FINAL_PROJECT_REPORT.md) for limitations,
 baseline comparisons and generated artifact paths. Open the local
 `../output/ego4d-localizer-review-validated/review.html` for the query/box review.
+
+## Spatial matcher and joint EPIC/Ego4D ablation
+
+[spatial-joint-localization.json](spatial-joint-localization.json) records the
+subsequent controlled comparison. Spatial mean positive IoU reaches 0.08854
+with and without auxiliary EPIC training, improving on the original temporal
+prototype but providing no demonstrated extra localization gain from EPIC.
+The joint model does learn EPIC noun classification through its shared
+projection; EPIC supplies no localization boxes.
+
+The experiment uses the same Ego4D validation frame sample, seed, initialization,
+and Ego4D batch order across both spatial-model ablations. Checkpoint selection
+now maximizes mean positive IoU. All comparisons are exploratory validation
+diagnostics, not test or official benchmark scores. The new local review is
+`../output/spatial-joint-review/review.html`.

@@ -209,7 +209,64 @@ and Ego-Exo4D videos are **not** silently mixed into this localization run.
 Generated features, checkpoints, review images, and licensed media stay local,
 outside Git. Use a fresh output directory for each command rerun.
 
-Run the contract tests with:
+### Improved spatial matching and joint EPIC/Ego4D training
+
+`spatial_localizer.py` is the current image-query experiment. It replaces
+unanchored global box regression with normalized query/patch matching and
+box offsets anchored to the patch grid. A shared residual feature projection
+also feeds an auxiliary EPIC noun classifier. The old temporal prototype
+remains available for reproducibility; the new spatial head is framewise,
+not a completed temporal tracking or text-query system.
+
+EPIC supplies **noun labels, not boxes**. The extractor reads four frames per
+action segment from canonical non-empty local training videos, using the
+same frozen ViT-S/14/224 preprocessing as the Ego4D bundle. It excludes
+zero-byte files and suffixed video exports whose annotation alignment has
+not been established. The verified subset has 31 segments from `P01_10`
+and `P02_05`, covering 12 noun classes. No EPIC validation/test segment is
+used by the default command.
+
+```powershell
+python .\prepare_epic_localization.py --output-dir .\output\epic-dinov2-nouns
+
+# Matched Ego4D-only ablation
+python .\train_spatial_localizer.py `
+  --train-features .\output\ego4d-dinov2-small-224\train `
+  --val-features .\output\ego4d-dinov2-small-224\val `
+  --output-dir .\output\spatial-ego-only --epochs 10
+
+# One model: Ego4D localization + 0.1 * EPIC noun-classification loss
+python .\train_spatial_localizer.py `
+  --train-features .\output\ego4d-dinov2-small-224\train `
+  --val-features .\output\ego4d-dinov2-small-224\val `
+  --epic-features .\output\epic-dinov2-nouns `
+  --output-dir .\output\spatial-epic-ego-joint --epochs 10
+
+python .\inspect_localization.py `
+  --features .\output\ego4d-dinov2-small-224\val `
+  --checkpoint .\output\spatial-epic-ego-joint\best.pt `
+  --output-dir .\output\spatial-joint-review
+```
+
+Outputs already exist for the recorded experiments; choose fresh directories
+when rerunning. The joint trainer selects `best.pt` by maximum validation
+positive-frame mean IoU (unlike the older trainer's minimum loss). It combines
+one Ego4D batch of four queries and one EPIC batch of up to 16 segments per
+step, cycling the small EPIC set. AdamW uses learning rate 0.0001 and seed 42;
+both ablations preserve the same Ego4D order and initialization. Epoch logs
+record EPIC loss and update counts to make joint learning auditable.
+
+The joint checkpoint reaches **0.08854 mean positive-frame IoU**, compared
+with 0.00607 for the previously selected temporal prototype. The Ego4D-only
+spatial ablation also reaches 0.08854: **EPIC learning is wired and measured,
+but extra localization benefit has not been demonstrated**. Joint response
+F1 is only 0.05896, below the always-positive 0.07572 baseline. These remain
+poor, exploratory sparse-validation results, not official VQ2D scores.
+See [results/spatial-joint-localization.json](results/spatial-joint-localization.json)
+and [FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md) for precise comparisons.
+Open `output/spatial-joint-review/review.html` to inspect improved predictions.
+
+Run all tests with:
 
 ```powershell
 python -m unittest discover -s .\tests

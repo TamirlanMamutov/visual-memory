@@ -6,7 +6,111 @@
 Changes are committed and pushed on that branch. Existing local changes in
 `GUI-README.md` and `experiment_gui.py` remain untouched and uncommitted.
 
-## Latest status: real Ego4D subset prepared and trained
+## Latest experiment: spatial matching with shared EPIC/Ego4D training
+
+The subsequent November 10 experiment improves spatial overlap and makes one
+model learn from **both** sources through shared trainable parameters. This
+section supersedes the earlier single-source results below.
+
+### Changes and supervision
+
+The original temporal prototype regressed global boxes without explicit patch
+coordinates. The new `spatial_localizer.py` instead preserves a 16-by-16 spatial
+grid, scores video patches against a centrally pooled visual query using
+normalized DINOv2 features, and refines a box anchored to the highest-scoring
+patch. A zero-initialized residual linear projection preserves pretrained
+similarities initially and is learned by both datasets. A spatial cross-entropy
+loss with soft Gaussian center targets supplies matching supervision even when
+initial box predictions select an incorrect patch. The head is framewise:
+temporal track reasoning is future work, not an implemented improvement.
+
+EPIC supplies **segment noun labels only**, not fabricated object boxes.
+`prepare_epic_localization.py` decodes four frames per training action segment
+and pools frozen ViT-S/14 features using the same 224-pixel preprocessing as
+Ego4D. Only two canonical, non-empty local videos match trusted filenames and
+timestamps: `P01_10` and `P02_05`, yielding 31 segments and 12 distinct noun
+classes. Suffixed video exports were not used because their time alignment
+was not established; the zero-byte video was excluded.
+
+The shared projection feeds both query/patch matching and a 300-way EPIC noun
+classifier. Every joint optimizer step combines Ego4D presence/L1/GIoU/spatial
+losses with **0.1 times EPIC noun cross-entropy**. The small EPIC set is cycled,
+with a batch of up to 16 segments paired with each Ego4D batch of four queries.
+This is genuine multi-task shared-parameter training, not separate JPoSE
+retrieval training and not a claim that the datasets have interchangeable labels.
+
+### Controlled validation comparison
+
+Both spatial-model runs use the same frozen features, 117 training queries,
+27 validation queries, sampled frames, seed 42, parameter initialization, and
+Ego4D batch order. AdamW uses learning rate 0.0001 and weight decay 0.0001
+for ten epochs. The comparison changes only whether EPIC auxiliary batches
+contribute to the objective. Their common selection rule maximizes validation
+positive-frame mean IoU and selects epoch 3 in both cases.
+
+| Model | Positive-frame mean IoU | Presence F1 |
+|---|---:|---:|
+| Previous temporal checkpoint (selected by validation loss) | 0.00607 | 0.04255 |
+| Initial spatial matcher, before training | 0.05361 | 0.04412 |
+| Spatial matcher trained on Ego4D only, epoch 3 | 0.08854 | 0.05882 |
+| Spatial matcher trained jointly on Ego4D + EPIC, epoch 3 | 0.08854 | 0.05896 |
+
+Spatial overlap improves from approximately **0.61% to 8.85%** against the
+previously selected checkpoint. Selection criteria changed, so a less favorable
+comparison for the new model is also recorded: the old temporal run's maximum
+IoU at any epoch was 0.00754, still below the new result. These are exploratory
+comparisons on a reused validation subset, not an unbiased test-set estimate.
+An initial matching probe compared full-query, center-query, and patchwise
+matching on this same validation subset; architecture choices therefore also
+used validation feedback. No confidence interval or multi-seed claim is made.
+
+**The extra localization benefit of EPIC is not demonstrated.** The two
+spatial models differ by less than 0.000001 mean IoU, marginally favoring
+Ego4D-only. Joint EPIC training accuracy rises from 0 to 38.7% and full-EPIC
+training loss falls from 5.7184 to 4.8274. These are training-set diagnostics,
+not EPIC held-out scores. There are 300 logged EPIC auxiliary updates over
+ten epochs; tests verify that both losses send nonzero gradients into the
+same projection. The selected projection weights differ between ablations,
+confirming EPIC is not an unused side head.
+
+### Limitations and next steps
+
+The joint model still performs poorly: only 11 of the 68 annotated positive
+validation frames reach IoU at least 0.25, and presence F1 remains below the
+always-present baseline (0.07572). At the fixed 0.5 presence threshold it
+produces 13 true positives, 360 false positives, and 55 false negatives.
+Positive-frame IoU ignores these presence decisions, so it is not overall
+retrieval success, temporal AP, or stAP25. Sparse pre-query sampling still
+misses one of the 27 annotated response tracks.
+
+Priorities are better response-frame discrimination, denser temporal search
+and official track evaluation, larger/diverse EPIC training data, and
+multi-seed transfer ablations. The improved model does not yet support raw-text
+or combined-query inference, interaction cues, or official VQ2D track output.
+Ego-Exo4D remains excluded for lack of matching localization supervision.
+
+### Artifacts and milestone
+
+- Joint model: `output/spatial-epic-ego-joint/`
+- Matched Ego4D-only ablation: `output/spatial-ego-only/`
+- EPIC feature/label provenance: `output/epic-dinov2-nouns/`
+- New query/box review: `output/spatial-joint-review/review.html`
+- Committed measured summary: `results/spatial-joint-localization.json`
+- Twenty-five unit tests pass, including spatial anchoring, losses from
+  both datasets reaching the shared projection, and a reloadable joint run.
+- The sibling milestone document's Dataset, Approach, Remaining Work, and
+  Partial Results sections now describe this measured local implementation,
+  rather than template scores or unverified full-dataset/CLIP claims. Its
+  bibliography was updated for the GIoU loss and duplicate citation keys removed.
+- The milestone compiles locally to `Project Milestone Document/main.pdf`:
+  three pages total, comprising two pages of content and one of references.
+  BibTeX resolves the citations and no overfull boxes were reported.
+
+The milestone is outside this Git repository and is edited in place; repository
+commits contain the implementation, aggregate results, and documentation,
+not a duplicate copy of the milestone.
+
+## Earlier experiment: real Ego4D subset prepared and trained
 
 The user added `Ego4D/v2/clips` on November 10. There are **39 non-empty MP4
 clips**, totaling 2,131,649,333 bytes. Their clip IDs match **117 training
