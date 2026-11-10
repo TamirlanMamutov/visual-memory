@@ -217,7 +217,16 @@ def main():
         """Train the cross-encoder on top of the (frozen) first stage; store it in state."""
         fit_df, held_df, held = split_holdout(train_df, args.holdout, args.seed)
         log(f'Reranker stage: {len(fit_df)} training clips, {len(held_df)} held-out clips from videos {held}')
-        cross_state, alpha, rhist, repoch = train_reranker(model, cross, fit_df, held_df, make_loader,
+        loader_fn = make_loader
+        if feats is None:
+            # Full mode: the first stage is frozen now, so encode all stored frames with the
+            # fine-tuned image tower once instead of re-running ViT-L every reranker epoch.
+            log('Encoding stored frames with the fine-tuned image encoder once for the reranker stage')
+            model.zero_grad(set_to_none=True)
+            ft = D.build_feature_cache(train_df, model.clip, preprocess_tensor, None, dev, log, batch_clips=8)
+            loader_fn = lambda df, train: DataLoader(Clips(df, tokenize(tokenizer, df.narration), args.frames, train, ft),
+                                                     batch_size=256, num_workers=0)
+        cross_state, alpha, rhist, repoch = train_reranker(model, cross, fit_df, held_df, loader_fn,
                                                            lambda texts: tokenize(tokenizer, texts), args, dev, amp, log)
         cross.load_state_dict(cross_state)
         state.update(cross=cross_state, rerank_alpha=alpha, reranker=dict(

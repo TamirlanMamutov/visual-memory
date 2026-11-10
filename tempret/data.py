@@ -173,10 +173,10 @@ def build_feature_cache(df, clip_model, preprocess_tensor, tag, device, log=prin
     """Encode every stored frame with the frozen CLIP image tower (CLS token
     after the visual projection). Saves {nid: fp16 [STORED_FRAMES, D]}."""
     import torch
-    path = feature_file(tag)
-    feats = torch.load(path) if path.exists() else {}
+    path = feature_file(tag) if tag else None          # tag None: in-memory only
+    feats = torch.load(path) if path is not None and path.exists() else {}
     todo = [n for n in df.index if n not in feats]
-    log(f'Feature cache {path.name}: {len(feats)} clips cached, {len(todo)} to encode')
+    log(f'Feature cache {path.name if path else "(in memory)"}: {len(feats)} clips cached, {len(todo)} to encode')
     clip_model.eval()
     for i in range(0, len(todo), batch_clips):
         ids = todo[i:i + batch_clips]
@@ -187,7 +187,7 @@ def build_feature_cache(df, clip_model, preprocess_tensor, tag, device, log=prin
         feats.update({n: out[j] for j, n in enumerate(ids)})
         if (i // batch_clips) % 50 == 0:
             log(f'  encoded {min(i + batch_clips, len(todo))}/{len(todo)} clips')
-    FEATURE_CACHE.mkdir(parents=True, exist_ok=True)
-    if todo:
+    if todo and path is not None:
+        FEATURE_CACHE.mkdir(parents=True, exist_ok=True)
         torch.save(feats, path)
     return feats
