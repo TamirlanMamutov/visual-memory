@@ -1,0 +1,50 @@
+
+Drop .025, patience 1
+tAP @ IoU=0.25       |      0.038
+stAP @ IoU=0.25      |      0.015
+recovery %           |      2.321
+
+Drop .025, patience 3
+tAP @ IoU=0.25       |      0.042
+stAP @ IoU=0.25      |      0.018
+recovery %           |      2.527
+
+Drop .05, patience 1
+tAP @ IoU=0.25       |      0.071
+stAP @ IoU=0.25      |      0.033
+recovery %           |      3.800
+
+Drop .05, patience 3
+tAP @ IoU=0.25       |      0.082
+stAP @ IoU=0.25      |      0.039
+recovery %           |      4.067
+
+Drop .075, patience 1
+tAP @ IoU=0.25       |      0.104
+stAP @ IoU=0.25      |      0.046
+recovery %           |      4.663
+
+Drop .075, patience 3
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.047
+recovery %           |      4.704
+
+Drop .10, patience 1
+tAP @ IoU=0.25       |      0.099
+stAP @ IoU=0.25      |      0.047
+recovery %           |      5.362
+
+Drop .10, patience 3
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.047
+recovery %           |      5.629
+
+Drop .15, patience 1
+tAP @ IoU=0.25       |      0.085
+stAP @ IoU=0.25      |      0.042
+recovery %           |      6.122
+
+Drop .15, patience 3
+tAP @ IoU=0.25       |      0.086
+stAP @ IoU=0.25      |      0.042
+recovery %           |      6.450

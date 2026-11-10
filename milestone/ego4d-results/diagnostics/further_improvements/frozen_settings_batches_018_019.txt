@@ -1,0 +1,48 @@
+/tmp/frozen-raw.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.043
+tAP @ IoU=0.25       |      0.098
+stAP                 |      0.010
+stAP @ IoU=0.25      |      0.036
+success              |     19.048
+recovery %           |     10.294
+/tmp/frozen-trim15.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.063
+tAP @ IoU=0.25       |      0.158
+stAP                 |      0.019
+stAP @ IoU=0.25      |      0.040
+success              |     23.810
+recovery %           |      6.985
+/tmp/frozen-trim25.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.063
+tAP @ IoU=0.25       |      0.158
+stAP                 |      0.019
+stAP @ IoU=0.25      |      0.040
+success              |     23.810
+recovery %           |      6.250
+/tmp/frozen-expand15.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.043
+tAP @ IoU=0.25       |      0.098
+stAP                 |      0.018
+stAP @ IoU=0.25      |      0.036
+success              |     19.048
+recovery %           |      8.824

@@ -1,0 +1,44 @@
+{
+  "queries": 30,
+  "videos": 5,
+  "metrics": {
+    "image": {
+      "hits": 3,
+      "shortlist_stAP25": 0.02142857142857143
+    },
+    "text": {
+      "hits": 3,
+      "shortlist_stAP25": 0.010000000000000002
+    },
+    "spoken": {
+      "hits": 3,
+      "shortlist_stAP25": 0.0125
+    }
+  },
+  "transcripts": {
+    "bulb": "Bob.",
+    "chair": "Chair.",
+    "bottle": "Bottle.",
+    "stool": "Store.",
+    "waste bin": "Waste bin.",
+    "mask": "Mask.",
+    "spray can": "Spray can.",
+    "scalpel": "scalpel",
+    "car": "Car.",
+    "scissors": "Scissors.",
+    "carton": "Carton.",
+    "bucket": "Bucket.",
+    "tweezers": "Tweezers.",
+    "jug": "JUG!",
+    "coffee table": "Coffee table.",
+    "sport shoe": "Sports shoe.",
+    "electric kettle": "Electric Kettle",
+    "tissue box": "tissue box.",
+    "book": "Book.",
+    "phone": "Phone.",
+    "knit hat": "Knit Hat.",
+    "shoes": "Cheers!",
+    "remote control": "Remote control.",
+    "ps remote": "PS Remote"
+  }
+}

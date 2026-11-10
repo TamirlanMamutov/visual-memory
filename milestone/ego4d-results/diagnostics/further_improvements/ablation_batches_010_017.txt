@@ -1,0 +1,48 @@
+/tmp/check-vq-patch.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.038
+tAP @ IoU=0.25       |      0.076
+stAP                 |      0.009
+stAP @ IoU=0.25      |      0.027
+success              |     13.608
+recovery %           |      6.656
+/tmp/check-vq-trim-only.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.034
+tAP @ IoU=0.25       |      0.099
+stAP                 |      0.006
+stAP @ IoU=0.25      |      0.024
+success              |     18.038
+recovery %           |      4.704
+/tmp/check-vq-scale-only.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.038
+tAP @ IoU=0.25       |      0.076
+stAP                 |      0.011
+stAP @ IoU=0.25      |      0.031
+success              |     14.241
+recovery %           |      6.286
+/tmp/check-vq-trim.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.034
+tAP @ IoU=0.25       |      0.099
+stAP                 |      0.009
+stAP @ IoU=0.25      |      0.034
+success              |     17.405
+recovery %           |      4.417

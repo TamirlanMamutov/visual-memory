@@ -1,0 +1,69 @@
+\documentclass{article}
+\PassOptionsToPackage{numbers,compress}{natbib}
+\usepackage[final]{neurips_2026}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\title{Visual Episodic Memory for Object Retrieval\\[0.3em]\large CS230 Project Milestone (Computer Vision)}
+\author{Team members and SUNet IDs to be added}
+\begin{document}
+\maketitle
+
+\section{Task and progress}
+We study visual query localization in egocentric video. Given an image crop of an object and a query time, the system searches the preceding video and predicts a scored sequence of bounding boxes for the object's last visible appearance. We first reproduced the evaluation of a pretrained JPoSE retrieval baseline, then developed a training-free object-localization pipeline using frozen DINOv2 features \citep{epic,dino}. The proposed interaction-aware temporal model has yet to be trained.
+
+\section{Team contributions and methods}
+Our teammates evaluated the supplied JPoSE checkpoint with cached EPIC-KITCHENS-100 features, obtaining nDCG of 0.690 and mAP of 0.734. A one-epoch training run from scratch reached 0.536 nDCG and 0.478 mAP. They also added a portable experiment launcher and tools to inspect Ego-Exo4D annotations \citep{repo}. These results concern video--text action retrieval. The localization experiments below use image crops and bounding-box tracks.
+
+For the object localization experiments, we built a baseline that embeds each query and video frame with frozen DINOv2 ViT-S/14. It scores multiscale windows by cosine similarity to the query. At 5 FPS, it returns the latest run of at least two consecutive frames with scores above the 95th percentile minus 0.15. We evaluated two changes. First, we reserved candidate slots across window shapes before crop re-encoding. Second, we divided the pre-query search into three time bins, proposed short intervals within those bins, and selected an interval using mean crop similarity. RELOCATE motivates the use of region-level refinement for this task \citep{relocate}.
+
+\section{Preliminary results}
+On 20 labeled single-frame VISOR queries from one video, 160-candidate crop rescoring improved Top-1 localization at box IoU $\geq 0.5$ from 7/20 to 9/20. Recall@40 remained 14/20. Median candidate processing took 0.64 seconds per frame compared with 5.15 seconds for rescoring all 1,333 candidates on the same CPU. These timings exclude video decoding and shared query encoding.
+
+On Ego4D VQ2D \citep{ego4d}, we used 51 queries for development and held out 33 queries from ten different source videos. The holdout used one canonical clip per video, a 100 MB clip cap, and upright query crops. Table~\ref{tab:vq} reports the official evaluator's results with the settings frozen before the holdout run.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Ego4D validation holdout results on 33 queries.}
+\label{tab:vq}
+\begin{tabular}{lrrrr}
+\toprule
+Method & stAP$_{25}$ & tAP$_{25}$ & Success & Recovery \\
+\midrule
+Patch baseline & 0.009 & 0.104 & 12.12\% & 3.37\% \\
+Crop reranking within patch interval & 0.009 & 0.104 & 18.18\% & 2.53\% \\
+Distributed proposals + mean crop score & 0.014 & 0.055 & 21.21\% & 2.95\% \\
+Distributed proposals + recency & 0.011 & 0.083 & 27.27\% & 3.58\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three distributed proposals contained an interval with temporal IoU $\geq 0.25$ for 11/33 holdout queries, compared with 7/33 for global score ranking. The mean-crop selector improved holdout stAP$_{25}$ but reduced tAP$_{25}$, and its stAP$_{25}$ on the development set was 0.016 versus 0.027 for patch pooling. The mixed results motivate evaluating proposal coverage and final selection separately. With ground-truth timing supplied on the development set, the shape-balanced 40-box crop reranker raised diagnostic stAP$_{25}$ from 0.075 to 0.134. This diagnostic supplies the response frames and measures spatial performance under oracle timing.
+
+\section{Postprocessing and ablations}
+On a separate set of 132 queries from 12 source videos excluded from development, trimming each predicted track to its highest-scoring window of up to four seconds and expanding its boxes by 25\% raised stAP$_{25}$ from 0.0073 to 0.0193. The paired 95\% bootstrap interval for the gain was $[-0.0033, 0.0372]$, and Recovery fell from 2.30\% to 1.22\%.
+
+We then tested adaptive expansion on 82 fresh queries from six source videos. The rule expands boxes only when their sizes are consistent across the predicted track. We selected the consistency threshold on the 51 development queries. Relative to fixed expansion, adaptive expansion raised Success from 11/82 to 13/82. Both methods achieved stAP$_{25}$ of 0.0275 and Recovery of 1.77\%.
+
+We also tested a learned gate that switches to an alternative response window when it predicts higher temporal overlap. The gate used 13 development pairs and switched nine of 150 queries from 16 fresh source videos. With the same box predictor and postprocessing, stAP$_{25}$ rose from 0.0531 to 0.0548, with a paired 95\% bootstrap interval of $[-0.0166, 0.0120]$ for the change. Success rose from 18.7\% to 20.0\%, and Recovery rose from 6.11\% to 7.09\%. We retain the original selector for our primary comparison.
+
+A 16-setting sweep on 316 queries favored a 20-frame cap with 15\% box expansion, improving stAP$_{25}$ from 0.027 to 0.035. Adaptive score-based trimming reached 0.047 on the same tuning set. With box expansion fixed, adaptive trimming reached 0.0433 versus 0.0402 for the fixed cap on 42 queries from five source videos excluded from tuning. Temporal AP fell from 0.158 to 0.134 and Recovery fell from 6.99\% to 6.80\%. We previously examined these 42 queries, so fresh confirmation is pending.
+
+\section{Interaction and query modality pilots}
+Appearance and recency, generic hand presence, and fingertip proximity each found 4/30 qualifying tracks on five held-out source videos. Dense frame review found likely target contact but could not verify release.
+
+In a separate CLIP reranking pilot on 30 Ego4D queries, image crops, object-name text, transcripts of synthetic speech, and their combinations each found 3/30 qualifying tracks at rank one and 4/30 within the top three. A simulated annotation-derived time hint raised the rank-one count to 4/30. A manually written interaction hint in one bottle example still selected an earlier window. These tests reused image-derived candidates.
+
+\section{Ongoing evaluation}
+As of November 9, the canonical Ego4D validation sweep had completed 23 batches and 866 queries, with batch 023 started. The run uses frozen DINOv2 inference with fixed settings. Hyperparameter sweeps use cached predictions separately. Fresh confirmation of adaptive trimming and standalone text Recall@3 are pending. Rotated crops and entries without a canonical clip ID require separate handling for full coverage. VQLoC and RELOCATE provide published stAP$_{25}$ references on their reported validation sets \citep{vqloc,relocate}. The results above use subsets of validation.
+
+\begin{thebibliography}{9}
+\bibitem{epic} D. Damen et al. Rescaling egocentric vision: Collection, pipeline and challenges for EPIC-KITCHENS-100. \emph{IJCV}, 2022.
+\bibitem{dino} M. Oquab et al. DINOv2: Learning robust visual features without supervision. \emph{TMLR}, 2024.
+\bibitem{repo} CS230 project team. Visual memory experiments, revision \texttt{1d0fd38}. \url{https://github.com/TamirlanMamutov/visual-memory}.
+\bibitem{relocate} S. Khosla et al. RELOCATE: A simple training-free baseline for visual query localization using region-based representations. \emph{CVPR}, 2025.
+\bibitem{ego4d} K. Grauman et al. Ego4D: Around the world in 3,000 hours of egocentric video. \emph{CVPR}, 2022.
+\bibitem{vqloc} H. Jiang, S. K. Ramakrishnan, and K. Grauman. Single-stage visual query localization in egocentric videos. \emph{NeurIPS}, 2023.
+\end{thebibliography}
+\end{document}

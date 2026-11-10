@@ -1,0 +1,47 @@
+{
+  "queries": 30,
+  "videos": 5,
+  "hint_design": "Simulated anchor 3 s before annotated track start; wrong anchor shifted 30 s later.",
+  "results": {
+    "image": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.05463576411243869
+    },
+    "text": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.048749206909038785
+    },
+    "speech": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.048749206909038785
+    },
+    "image_text": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.05304118161623847
+    },
+    "image_speech": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.05304118161623847
+    },
+    "image_text_speech": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.05304118161623847
+    },
+    "text_nearby_time": {
+      "top1_hits": 4,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.062317480059547736
+    },
+    "text_wrong_time": {
+      "top1_hits": 3,
+      "top3_hits": 4,
+      "mean_top1_iou": 0.048749206909038785
+    }
+  }
+}

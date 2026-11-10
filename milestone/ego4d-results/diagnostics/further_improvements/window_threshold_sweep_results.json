@@ -1,0 +1,112 @@
+{
+  "tuning_queries": 316,
+  "tuning": [
+    {
+      "margin": 0.05,
+      "minimum": 2,
+      "selected": 63,
+      "top_three": 100,
+      "missing": 0
+    },
+    {
+      "margin": 0.05,
+      "minimum": 3,
+      "selected": 75,
+      "top_three": 111,
+      "missing": 0
+    },
+    {
+      "margin": 0.05,
+      "minimum": 5,
+      "selected": 85,
+      "top_three": 103,
+      "missing": 9
+    },
+    {
+      "margin": 0.1,
+      "minimum": 2,
+      "selected": 61,
+      "top_three": 109,
+      "missing": 0
+    },
+    {
+      "margin": 0.1,
+      "minimum": 3,
+      "selected": 70,
+      "top_three": 112,
+      "missing": 0
+    },
+    {
+      "margin": 0.1,
+      "minimum": 5,
+      "selected": 81,
+      "top_three": 113,
+      "missing": 2
+    },
+    {
+      "margin": 0.15,
+      "minimum": 2,
+      "selected": 60,
+      "top_three": 92,
+      "missing": 0
+    },
+    {
+      "margin": 0.15,
+      "minimum": 3,
+      "selected": 65,
+      "top_three": 91,
+      "missing": 0
+    },
+    {
+      "margin": 0.15,
+      "minimum": 5,
+      "selected": 69,
+      "top_three": 94,
+      "missing": 0
+    },
+    {
+      "margin": 0.2,
+      "minimum": 2,
+      "selected": 38,
+      "top_three": 60,
+      "missing": 0
+    },
+    {
+      "margin": 0.2,
+      "minimum": 3,
+      "selected": 42,
+      "top_three": 62,
+      "missing": 0
+    },
+    {
+      "margin": 0.2,
+      "minimum": 5,
+      "selected": 43,
+      "top_three": 61,
+      "missing": 0
+    }
+  ],
+  "chosen": {
+    "margin": 0.1,
+    "minimum": 5,
+    "selected": 81,
+    "top_three": 113,
+    "missing": 2
+  },
+  "check_queries": 42,
+  "check_videos": 5,
+  "check_baseline": {
+    "margin": 0.15,
+    "minimum": 2,
+    "selected": 10,
+    "top_three": 15,
+    "missing": 0
+  },
+  "check_chosen": {
+    "margin": 0.1,
+    "minimum": 5,
+    "selected": 15,
+    "top_three": 19,
+    "missing": 0
+  }
+}

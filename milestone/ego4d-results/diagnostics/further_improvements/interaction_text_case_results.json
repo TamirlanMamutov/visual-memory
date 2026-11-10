@@ -1,0 +1,42 @@
+{
+  "prompts": [
+    "a bottle",
+    "a hand holding a bottle beside a kitchen sink",
+    "opening a refrigerator"
+  ],
+  "windows": [
+    [
+      98,
+      102
+    ],
+    [
+      371,
+      375
+    ],
+    [
+      881,
+      885
+    ]
+  ],
+  "similarities": [
+    [
+      0.20844200253486633,
+      0.26908618211746216,
+      0.2573695182800293
+    ],
+    [
+      0.22894862294197083,
+      0.28286951780319214,
+      0.28156155347824097
+    ],
+    [
+      0.22505232691764832,
+      0.25966233015060425,
+      0.27724534273147583
+    ]
+  ],
+  "object_top": 1,
+  "correct_hint_top": 1,
+  "distractor_hint_top": 1,
+  "annotated_window_contains_frame": 881
+}

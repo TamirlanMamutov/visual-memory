@@ -1,0 +1,30 @@
+{
+  "clips": 22,
+  "frames_requested": 546,
+  "frames_scored": 546,
+  "frames_with_hands": 232,
+  "training_queries": 63,
+  "testing_queries": 30,
+  "testing_videos": 5,
+  "testing_queries_with_proximity": 4,
+  "appearance_only": {
+    "hits": 3,
+    "mean_iou": 0.049662918736239355,
+    "fixed_confidence_stAP25": 0.018750000000000003
+  },
+  "appearance_recency": {
+    "hits": 4,
+    "mean_iou": 0.06586656132648114,
+    "fixed_confidence_stAP25": 0.02666666666666667
+  },
+  "generic_hand": {
+    "hits": 4,
+    "mean_iou": 0.06586656132648114,
+    "fixed_confidence_stAP25": 0.02666666666666667
+  },
+  "interaction": {
+    "hits": 4,
+    "mean_iou": 0.06586656132648114,
+    "fixed_confidence_stAP25": 0.02666666666666667
+  }
+}

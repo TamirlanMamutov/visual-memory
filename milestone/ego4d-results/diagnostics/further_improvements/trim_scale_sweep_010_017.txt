@@ -1,0 +1,64 @@
+10 frames, 1 scale
+tAP @ IoU=0.25       |      0.059
+stAP @ IoU=0.25      |      0.020
+recovery %           |      3.431
+10 frames, 1.15 scale
+tAP @ IoU=0.25       |      0.059
+stAP @ IoU=0.25      |      0.024
+recovery %           |      3.328
+10 frames, 1.25 scale
+tAP @ IoU=0.25       |      0.059
+stAP @ IoU=0.25      |      0.022
+recovery %           |      3.266
+10 frames, 1.40 scale
+tAP @ IoU=0.25       |      0.059
+stAP @ IoU=0.25      |      0.025
+recovery %           |      3.020
+20 frames, 1 scale
+tAP @ IoU=0.25       |      0.099
+stAP @ IoU=0.25      |      0.024
+recovery %           |      4.704
+20 frames, 1.15 scale
+tAP @ IoU=0.25       |      0.099
+stAP @ IoU=0.25      |      0.035
+recovery %           |      4.560
+20 frames, 1.25 scale
+tAP @ IoU=0.25       |      0.099
+stAP @ IoU=0.25      |      0.034
+recovery %           |      4.417
+20 frames, 1.40 scale
+tAP @ IoU=0.25       |      0.099
+stAP @ IoU=0.25      |      0.030
+recovery %           |      4.047
+40 frames, 1 scale
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.027
+recovery %           |      6.245
+40 frames, 1.15 scale
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.033
+recovery %           |      6.122
+40 frames, 1.25 scale
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.031
+recovery %           |      5.834
+40 frames, 1.40 scale
+tAP @ IoU=0.25       |      0.100
+stAP @ IoU=0.25      |      0.031
+recovery %           |      5.423
+1000000 frames, 1 scale
+tAP @ IoU=0.25       |      0.076
+stAP @ IoU=0.25      |      0.027
+recovery %           |      6.656
+1000000 frames, 1.15 scale
+tAP @ IoU=0.25       |      0.076
+stAP @ IoU=0.25      |      0.033
+recovery %           |      6.574
+1000000 frames, 1.25 scale
+tAP @ IoU=0.25       |      0.076
+stAP @ IoU=0.25      |      0.031
+recovery %           |      6.286
+1000000 frames, 1.40 scale
+tAP @ IoU=0.25       |      0.076
+stAP @ IoU=0.25      |      0.030
+recovery %           |      5.937
