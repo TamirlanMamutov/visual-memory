@@ -12,7 +12,9 @@ from prepare_ego4d_localization import (
     padded_box,
     sample_frame_ids,
 )
-from inspect_localization import original_box
+from inspect_localization import export_review, original_box
+from multimodal_localizer import MultimodalTemporalLocalizer
+from train_multimodal_localizer import FeatureBundleDataset
 
 
 class FakeEncoder(torch.nn.Module):
@@ -80,6 +82,31 @@ class Ego4DPreparationTests(unittest.TestCase):
                 metadata["media_frame_ids"], [2 * index for index in metadata["frame_ids"]]
             )
             self.assertTrue(np.all(arrays["frame_mask"]))
+            bundle = Path(temporary) / "bundle"
+            bundle.mkdir()
+            for name, array in arrays.items():
+                np.save(bundle / f"{name}.npy", array[None])
+            dataset = FeatureBundleDataset(bundle)
+            output = Path(temporary) / "review"
+            output.mkdir()
+            # The review uses MP4 filenames; decoding is based on the container,
+            # not its extension, so this fixture can keep the MJPG codec.
+            media_path = Path(temporary) / "clip1.mp4"
+            path.rename(media_path)
+            model = MultimodalTemporalLocalizer(
+                video_dim=3, image_query_dim=3, hidden_dim=8,
+                num_heads=2, num_temporal_layers=1, dropout=0,
+            )
+            try:
+                export_review(
+                    model, dataset, [metadata], {"train_1": self.record()},
+                    Path(temporary), output,
+                )
+                self.assertTrue((output / "review.html").is_file())
+                self.assertTrue((output / "predictions.json").is_file())
+                self.assertTrue((output / "query-0.jpg").is_file())
+            finally:
+                dataset.close()
 
 
 if __name__ == "__main__":

@@ -166,7 +166,7 @@ class MultimodalTemporalLocalizer(nn.Module):
         patch_logits = self.patch_score(patch_features).squeeze(-1)
         patch_boxes = self._decode_boxes(self.patch_box(patch_features))
         patch_weights = patch_logits.softmax(dim=-1).unsqueeze(-1)
-        boxes = (patch_weights * patch_boxes).sum(dim=2)
+        boxes = (patch_weights * patch_boxes).sum(dim=2).clamp(0, 1)
         presence_logits = self.presence_score(frame_context).squeeze(-1)
         return LocalizationOutput(
             boxes_xyxy=boxes,

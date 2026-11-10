@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-10",
+  "task": "image-query localization on a small local Ego4D VQ2D subset",
+  "official_benchmark": false,
+  "quality": "poor; not a usable localization system",
+  "train_queries": 117,
+  "validation_queries": 27,
+  "train_source_videos": 31,
+  "validation_source_videos": 8,
+  "source_video_overlap": 0,
+  "train_valid_frames": 1870,
+  "train_positive_frames": 787,
+  "validation_valid_frames": 1728,
+  "validation_positive_frames": 68,
+  "validation_queries_with_sampled_response": 26,
+  "encoder": "dinov2_vits14",
+  "encoder_repository": "facebookresearch/dinov2:7764ea0f912e53c92e82eb78a2a1631e92725fc8",
+  "image_size": 224,
+  "encoder_frozen": true,
+  "epochs": 10,
+  "seed": 42,
+  "learning_rate": 0.0003,
+  "weight_decay": 0.0001,
+  "batch_size": 2,
+  "hidden_dim": 64,
+  "num_heads": 4,
+  "temporal_layers": 1,
+  "device": "cpu",
+  "selection_rule": "lowest validation loss",
+  "selected_epoch": 2,
+  "selected_validation": {
+    "loss": 1.886213865561293,
+    "presence_f1": 0.0425531914893617,
+    "mean_positive_iou": 0.006067196468767875
+  },
+  "last_validation": {
+    "loss": 2.2780410376963793,
+    "presence_f1": 0.10954616588419405,
+    "mean_positive_iou": 0.005795157987021786
+  },
+  "untrained_validation": {
+    "loss": 2.045402377389355,
+    "presence_f1": 0.0,
+    "mean_positive_iou": 0.004123281673802172
+  },
+  "always_present_validation_f1": 0.0757238307349666,
+  "constant_training_mean_box_validation_iou": 0.0,
+  "feature_directory": "output/ego4d-dinov2-small-224",
+  "run_directory": "output/ego4d-localizer-validated-run",
+  "review": "output/ego4d-localizer-review-validated/review.html",
+  "caveats": [
+    "Training frames are response-balanced; validation uses sparse uniform pre-query history.",
+    "One of 27 validation queries has no response frames in the sparse sample.",
+    "Mean positive IoU does not gate boxes on presence predictions.",
+    "Validation was used for checkpoint selection; no held-out test evaluation.",
+    "No official VQ2D response-track or stAP25 evaluation.",
+    "Text queries and the other datasets are not included in this training run."
+  ]
+}

@@ -1,9 +1,119 @@
 # Visual Memory Project: Dataset Readiness and Training Report
 
-**Report date:** 2026-11-09
-**Repository:** `visual-memory` at `1d0fd3804ab98ac0f1404b3fcc6258fac31cae88`
-**Commit status:** No commits made. Existing local changes in `GUI-README.md` and
-`experiment_gui.py` were preserved.
+**Initial report date:** 2026-11-09; **latest update:** 2026-11-10.
+**Initial repository snapshot:** `1d0fd3804ab98ac0f1404b3fcc6258fac31cae88`.
+**Current implementation branch:** `tamirlan/multimodal-localization-model`.
+Changes are committed and pushed on that branch. Existing local changes in
+`GUI-README.md` and `experiment_gui.py` remain untouched and uncommitted.
+
+## Latest status: real Ego4D subset prepared and trained
+
+The user added `Ego4D/v2/clips` on November 10. There are **39 non-empty MP4
+clips**, totaling 2,131,649,333 bytes. Their clip IDs match **117 training
+queries across 31 source videos** and **27 validation queries across 8 source
+videos** in the existing processed VQ2D annotations. There is no source-video
+overlap between these splits. This is a small local subset of 13,607 training
+and 4,504 validation annotation records, not the complete dataset.
+
+### What now works end to end
+
+1. `prepare_ego4d_localization.py` decodes the clips, crops canonical visual
+   queries from the annotated query-image frames, and maps the 5-FPS annotation
+   indices to the actual media FPS (the inspected clips are 30 FPS).
+2. RGB frames and query crops are centered in square padding, bicubically
+   resized and ImageNet-normalized. Target boxes are clipped to image bounds
+   and transformed into normalized XYXY coordinates on that same padded canvas.
+3. A frozen, pretrained DINOv2 ViT-S/14 at 224 pixels produces patch features.
+   This is an explicitly smaller CPU baseline than the proposed ViT-B/14 at
+   448 pixels; the preparer supports the latter as its default configuration.
+4. Float32 features/boxes and boolean masks are persisted as trainer-compatible
+   `.npy` bundles, with per-query frame IDs, FPS, clip IDs, and encoder provenance.
+5. The localization model trains on real image-query examples and validates
+   on the separate local validation subset. Checkpoints and metrics are saved.
+6. `inspect_localization.py` reloads the chosen checkpoint and exports all
+   sampled-frame predictions, clip timestamps, original/padded coordinates,
+   query-crop thumbnails, and predicted/ground-truth box overlays.
+
+Training selects up to 16 balanced response/non-response frames per query.
+Validation uniformly selects 64 frames from the pre-query history without
+using response boxes. The bundles contain **1,870 valid training frames**,
+including 787 response frames, and **1,728 validation frames**, including
+68 response frames. Response frames were sampled for 26 of 27 validation
+queries; the remaining short response was missed by sparse sampling.
+Labels outside the annotated response track mean "not part of this response,"
+not independently verified physical absence of the object.
+
+### Measured ten-epoch run
+
+Configuration: CPU, four threads, seed 42, AdamW, learning rate 0.0003,
+weight decay 0.0001, batch size 2, hidden dimension 64, four attention heads,
+one temporal layer. The visual backbone remains frozen. Model selection uses
+lowest validation loss; this selected **epoch 2**, not epoch 10.
+
+| Model / checkpoint | Validation loss | Presence F1 | Mean box IoU on positive frames |
+|---|---:|---:|---:|
+| Randomly initialized localization head, same seed/configuration | 2.0454 | 0.0000 | 0.0041 |
+| Selected checkpoint, epoch 2 | **1.8862** | 0.0426 | 0.0061 |
+| Final checkpoint, epoch 10 | 2.2780 | 0.1095 | 0.0058 |
+| Always predict presence | Not applicable | 0.0757 | Not applicable |
+| Constant mean training-target box | Not applicable | Not applicable | 0.0000 |
+
+These are **poor localization results**: 0.0061 IoU is about 0.61% overlap,
+not 61%. The selected model's presence F1 is below the always-present baseline.
+Training loss fell from 2.0290 to 1.3479, while validation loss worsened after
+the early minimum. This is consistent with overfitting/distribution mismatch;
+the run does not demonstrate useful localization or justify more epochs alone.
+Presence and spatial predictions need further architectural/loss investigation.
+
+All metrics are sparse sampled-frame diagnostics. Mean positive IoU evaluates
+boxes on labeled positive frames regardless of the model's presence decision.
+These results are **not stAP25**, not official VQ2D scores, and not held-out
+test-set results. The validation subset was used for checkpoint selection.
+The model does not yet produce official scored response-track proposals.
+
+### Validation and artifacts
+
+- All **19 unit tests passed**, covering annotation geometry, actual video
+  decoding/FPS conversion, query modes, masks, gradients, visual review export,
+  normalized output bounds, and batch-size-invariant validation metrics.
+- `pip check` passed. Added dependencies are declared in
+  `requirements-localization.txt`; pretrained encoder code/weights are cached
+  locally outside the repository.
+- A regression test exposed float32 weighted-average coordinates exceeding
+  1 by approximately 1.2e-7; final box output is now clamped to its contract.
+- Validation loss now aggregates presence by valid-frame count and box losses
+  by positive-frame count, so changing evaluation batch size does not change
+  the reported objective. The recorded ten-epoch run was repeated after this
+  fix; exploratory earlier run folders are not the authoritative results.
+
+Authoritative local artifacts:
+
+- Features and preprocessing provenance: `output/ego4d-dinov2-small-224/`
+- Recorded run: `output/ego4d-localizer-validated-run/` (`best.pt`, `last.pt`,
+  `metrics.jsonl`, `run.json`, and `COMPLETE`)
+- Visual review: `output/ego4d-localizer-review-validated/review.html`
+- Prediction export: `output/ego4d-localizer-review-validated/predictions.json`
+- Small committed aggregate summary: `results/ego4d-localization.json`
+
+Raw data, generated features, weights and review images stay local and ignored
+by Git. The new review is separate from the existing experiment GUI.
+
+### What is still missing
+
+The **downloaded Ego4D subset is now ready for image-query feature training**;
+the statement that all localization media is missing no longer applies.
+However, the model is not yet a useful finished system. Next steps are to
+improve spatial/query matching and temporal presence prediction, check the
+effect of balanced training versus sparse-history validation, run exhaustive
+history/official track evaluation, and scale up the training data.
+Text/combined-query feature extraction, verified text-query targets,
+interaction cues and integration of appropriately labeled EPIC/Ego-Exo4D
+data remain unimplemented. This run does **not** train one model on all three
+datasets.
+
+The remaining sections below preserve the November 9 retrieval experiments
+and earlier development stages; their missing-Ego4D-media statements are
+historical and superseded by this latest update.
 
 ## Executive summary
 

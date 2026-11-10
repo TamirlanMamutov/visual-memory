@@ -67,6 +67,19 @@ class MultimodalLocalizerTests(unittest.TestCase):
         self.assertIsNotNone(model.presence_score.weight.grad)
         self.assertIsNotNone(model.query_attention.in_proj_weight.grad)
 
+    def test_patch_averaging_preserves_normalized_bounds_at_saturation(self):
+        torch.manual_seed(0)
+        model = self.make_model()
+        with torch.no_grad():
+            model.patch_box.weight.zero_()
+            model.patch_box.bias.fill_(100)
+            output = model(
+                torch.randn(2, 3, 5, 12),
+                text_query_features=torch.randn(2, 6, 8),
+            )
+        self.assertTrue(torch.all(output.boxes_xyxy <= 1))
+        self.assertTrue(torch.all(output.boxes_xyxy >= 0))
+
     def test_query_mask_can_disable_a_modality_for_a_sample(self):
         model = self.make_model()
         output = model(
@@ -152,3 +165,24 @@ class MultimodalLocalizerTests(unittest.TestCase):
             self.assertTrue(np.isfinite(train_metrics["loss"]))
             self.assertTrue(np.isfinite(validation_metrics["loss"]))
             self.assertIsNotNone(validation_metrics["mean_positive_iou"])
+
+    def test_validation_loss_is_independent_of_batch_size(self):
+        torch.manual_seed(42)
+        model = self.make_model()
+        samples = []
+        for index in range(3):
+            samples.append({
+                "video_features": torch.randn(3, 5, 12),
+                "text_query_features": torch.randn(2, 8),
+                "boxes_xyxy": torch.tensor([[0.1, 0.2, 0.6, 0.7]] * 3),
+                "object_present": torch.arange(3) <= index,
+                "frame_mask": torch.arange(3) >= index,
+            })
+        individual = _run_epoch(
+            model, DataLoader(samples, batch_size=1), torch.device("cpu")
+        )
+        batched = _run_epoch(
+            model, DataLoader(samples, batch_size=3), torch.device("cpu")
+        )
+        for key in ("loss", "presence_f1", "mean_positive_iou"):
+            self.assertAlmostEqual(individual[key], batched[key], places=6)

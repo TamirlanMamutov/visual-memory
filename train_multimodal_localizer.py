@@ -194,7 +194,8 @@ def _run_epoch(
 ) -> dict[str, float | None]:
     training = optimizer is not None
     model.train(training)
-    total_loss = 0.0
+    presence_loss_sum = box_l1_sum = giou_loss_sum = 0.0
+    valid_frame_count = 0
     sample_count = 0
     true_positive = false_positive = false_negative = 0
     iou_sum = 0.0
@@ -218,16 +219,21 @@ def _run_epoch(
                 optimizer.step()
 
             batch_size = batch["video_features"].shape[0]
-            total_loss += losses["loss"].detach().item() * batch_size
             sample_count += batch_size
             valid = batch["frame_mask"]
             target = batch["object_present"]
+            valid_count = int(valid.sum().item())
+            valid_frame_count += valid_count
+            presence_loss_sum += losses["presence_loss"].detach().item() * valid_count
             prediction = output.presence_logits >= 0
             true_positive += int((prediction & target & valid).sum().item())
             false_positive += int((prediction & ~target & valid).sum().item())
             false_negative += int((~prediction & target & valid).sum().item())
             positive = target & valid
             if positive.any():
+                positive_count = int(positive.sum().item())
+                box_l1_sum += losses["box_l1_loss"].detach().item() * positive_count
+                giou_loss_sum += losses["giou_loss"].detach().item() * positive_count
                 iou_sum += _box_iou(
                     output.boxes_xyxy[positive], batch["boxes_xyxy"][positive]
                 ).sum().item()
@@ -237,7 +243,10 @@ def _run_epoch(
         raise ValueError("Cannot run an epoch with an empty feature bundle")
     f1_denominator = 2 * true_positive + false_positive + false_negative
     return {
-        "loss": total_loss / sample_count,
+        "loss": (
+            presence_loss_sum / max(valid_frame_count, 1)
+            + (box_l1_sum + giou_loss_sum) / max(positive_frame_count, 1)
+        ),
         "presence_f1": 2 * true_positive / f1_denominator if f1_denominator else 0.0,
         "mean_positive_iou": (
             iou_sum / positive_frame_count if positive_frame_count else None

@@ -52,7 +52,7 @@ def export_review(
             best_frame = int(probabilities.masked_fill(~valid, -1).argmax().item())
             boxes = result.boxes_xyxy[0].numpy()
             width, height = metadata["decoded_width"], metadata["decoded_height"]
-            original_boxes = [original_box(box, width, height) for box in boxes[valid.numpy()]]
+            original_boxes = [original_box(box, width, height) for box in boxes]
             prediction = {
                 "sample_id": metadata["sample_id"],
                 "clip_uid": metadata["clip_uid"],
@@ -62,7 +62,9 @@ def export_review(
                 ],
                 "presence_probability": probabilities[valid].tolist(),
                 "boxes_xyxy_padded": boxes[valid.numpy()].tolist(),
-                "boxes_xyxy_original": original_boxes,
+                "boxes_xyxy_original": [
+                    box for box, is_valid in zip(original_boxes, valid.tolist()) if is_valid
+                ],
             }
             predictions.append(prediction)
             path = clips / f"{metadata['clip_uid']}.mp4"

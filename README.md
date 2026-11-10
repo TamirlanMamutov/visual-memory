@@ -163,16 +163,16 @@ python .\prepare_ego4d_localization.py `
 python .\train_multimodal_localizer.py `
   --train-features .\output\ego4d-dinov2-small-224\train `
   --val-features .\output\ego4d-dinov2-small-224\val `
-  --output-dir .\output\ego4d-localizer-first-run `
+  --output-dir .\output\ego4d-localizer-validated-run `
   --epochs 10 --batch-size 2 --hidden-dim 64 --num-heads 4 --temporal-layers 1
 
 python .\inspect_localization.py `
   --features .\output\ego4d-dinov2-small-224\val `
-  --checkpoint .\output\ego4d-localizer-first-run\best.pt `
-  --output-dir .\output\ego4d-localizer-review
+  --checkpoint .\output\ego4d-localizer-validated-run\best.pt `
+  --output-dir .\output\ego4d-localizer-review-validated
 ```
 
-Open `output/ego4d-localizer-review/review.html` to view query crops,
+Open `output/ego4d-localizer-review-validated/review.html` to view query crops,
 predicted boxes in red, and ground-truth boxes in green. The review shows
 the highest-presence sampled frame and a separately labeled ground-truth
 positive diagnostic frame when one was sampled. It also exports all sampled
