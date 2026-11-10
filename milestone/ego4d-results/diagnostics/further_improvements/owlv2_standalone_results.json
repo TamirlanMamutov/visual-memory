@@ -1,0 +1,8 @@
+{
+  "queries": 30,
+  "videos": 5,
+  "top1_hits": 1,
+  "top3_hits": 1,
+  "temporal_top3": 3,
+  "stAP25": 0.0020833333333333333
+}

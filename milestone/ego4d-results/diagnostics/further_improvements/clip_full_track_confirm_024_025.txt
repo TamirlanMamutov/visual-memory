@@ -1,0 +1,24 @@
+/tmp/vq-clip-confirm/baseline.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.049
+tAP @ IoU=0.25       |      0.126
+stAP                 |      0.014
+stAP @ IoU=0.25      |      0.028
+success              |      5.556
+recovery %           |      3.321
+/tmp/vq-clip-confirm/output/predictions.json
+Starting Evaluation.....
+Evaluating VQ2D performance
+--------------------
+all
+--------------------
+tAP                  |      0.049
+tAP @ IoU=0.25       |      0.126
+stAP                 |      0.014
+stAP @ IoU=0.25      |      0.028
+success              |      5.556
+recovery %           |      4.797

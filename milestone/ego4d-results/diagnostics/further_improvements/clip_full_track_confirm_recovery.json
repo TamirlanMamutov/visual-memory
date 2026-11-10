@@ -1,0 +1,44 @@
+{
+  "by_source_video": [
+    {
+      "queries": 3,
+      "frames": 80,
+      "baseline": 0,
+      "fusion": 0
+    },
+    {
+      "queries": 3,
+      "frames": 53,
+      "baseline": 0,
+      "fusion": 0
+    },
+    {
+      "queries": 3,
+      "frames": 25,
+      "baseline": 9,
+      "fusion": 12
+    },
+    {
+      "queries": 3,
+      "frames": 25,
+      "baseline": 0,
+      "fusion": 0
+    },
+    {
+      "queries": 3,
+      "frames": 26,
+      "baseline": 0,
+      "fusion": 0
+    },
+    {
+      "queries": 3,
+      "frames": 62,
+      "baseline": 0,
+      "fusion": 1
+    }
+  ],
+  "recovery_gain_ci95_percentage_points": [
+    0.0,
+    4.651162790697675
+  ]
+}

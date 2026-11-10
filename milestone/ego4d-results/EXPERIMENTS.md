@@ -20,3 +20,17 @@ November 9, 2026. The milestone records the team's JPoSE, EPIC-KITCHENS, and VIS
 The frozen validation queue had completed 23 batches and 866 queries at this snapshot. Batch 023 had started. Fresh confirmation of adaptive trimming and the standalone ranked text evaluation remain pending. The latter generates candidates directly from text. The validation queue uses frozen inference. The learned rerankers were fitted separately on small development sets.
 
 See [the milestone draft](main.tex) and the accompanying diagnostics for measurements and scripts. Some scripts require the project's local cached predictions and clips.
+
+## Follow-up on Recovery and standalone text
+
+- On 316 queries, the raw matcher omitted 2,237 of 4,868 annotated frames and supplied inaccurate boxes for 2,307. Fixed trim and expansion increased omitted frames to 3,893.
+- On 162 sampled frames that the original tracks covered, 27 top-ranked boxes met box IoU 0.50. The original top 20 contained an accurate box on 42 frames. Adding smaller proposals raised coverage to 67, and an aspect-ratio prior selected an accurate box on 34. On a 15-query engineering subset selected for short predicted tracks, that variant reduced Recovery from 30.22% to 19.63% and stAP25 from 0.207 to 0.173. Applying it only to small reference crops left both metrics unchanged. CLIP fusion improved the sampled-frame count from 27 to 30. SAM mask refinement tied the box baseline at two hits across 12 frames.
+- The frozen adaptive trim improved stAP25 from 0.083 to 0.102 and Recovery from 17.27% to 17.79% on 36 eligible queries from one new source video in batch 023. The earlier 80-query check favored the raw baseline. The frozen raw matcher remains the default.
+- Standalone CLIP text search returned zero qualifying tracks in the top three on 30 queries from five videos. Five queries had a qualifying temporal interval among the three results. A separate prompt-ensemble run also had zero spatio-temporal hits. On that run, smoothing reduced temporal top-three hits from two to zero. Restricting text or speech to breaking close image-score ties left the shared shortlist result at 3/30 at rank one and 4/30 in the top three.
+
+## Full-track CLIP reranking and text detector
+
+- On 15 queries from five videos selected for short predicted tracks, DINOv2 plus CLIP reranking held stAP25 at 0.207 and raised Recovery from 30.22% to 33.02% while keeping time windows and track confidence fixed. The nine additional recovered frames came from a net gain across two videos (+10 and −1).
+- OWLv2 box refinement at the standalone CLIP text shortlist's timestamps yielded zero qualifying tracks in the top three, tying the original grid boxes on the 22 uniquely matched queries. Eight queries with duplicate video and object-name keys were excluded. The separate standalone OWLv2 search found 1/30 qualifying tracks at rank one, with 3/30 temporal hits in the top three and stAP25 of 0.0021.
+
+- The 18-query CLIP confirmation raised Recovery from 3.32% to 4.80% on six unseen source videos with stAP25 tied at 0.028. The paired Recovery interval was 0.00 to 4.65 percentage points. Detection linking and denser rescanning have no scored result yet.
