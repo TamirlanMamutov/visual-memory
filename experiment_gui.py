@@ -14,15 +14,15 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import webbrowser
-from experiment_paths import HERE, ROOT
+from experiment_paths import HERE, ROOT, project_dir
 
 LOCAL_PYTHON = Path('.venv') / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
 PYTHON = './' + LOCAL_PYTHON.as_posix() if (HERE / LOCAL_PYTHON).is_file() else 'python'
-# GPU training environment (CUDA PyTorch, open_clip, transformers, PyAV). Kept
-# outside Google Drive: <drive root>/cs230-venv/env, or set CS230_PYTHON.
-GPU_ENV = Path(ROOT.anchor) / 'cs230-venv' / 'env' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+# GPU training environment (CUDA PyTorch, open_clip, transformers, PyAV):
+# <project>/cs230-venv/env, or set CS230_PYTHON.
+GPU_ENV = project_dir('cs230-venv') / 'env' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
 TRAIN_PYTHON = os.environ.get('CS230_PYTHON') or (str(GPU_ENV) if GPU_ENV.is_file() else PYTHON)
-CACHE = Path(os.environ.get('CS230_CACHE', Path(ROOT.anchor) / 'cs230-cache'))
+CACHE = Path(os.environ.get('CS230_CACHE', project_dir('cs230-cache')))
 PROGRESS = re.compile(r'(?:step|iter|\[)\s*(\d+)/(\d+)')
 
 def format_command(argv):

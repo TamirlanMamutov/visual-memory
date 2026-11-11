@@ -4,30 +4,30 @@ Neither paper releases a usable training recipe in full, so both pipelines are *
 
 ## Environment
 
-GPU training uses a separate environment outside Google Drive (Python 3.11 with CUDA PyTorch; Python 3.15 has no CUDA wheels):
+GPU training uses a separate environment in the project folder, `CS230 Project\cs230-venv` (Python 3.11 with CUDA PyTorch; Python 3.15 has no CUDA wheels):
 
 ```powershell
-& 'C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe' -m venv E:\cs230-venv\env
-E:\cs230-venv\env\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-E:\cs230-venv\env\Scripts\python.exe -m pip install -r requirements-gpu.txt
+& 'C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe' -m venv ..\cs230-venv\env
+..\cs230-venv\env\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+..\cs230-venv\env\Scripts\python.exe -m pip install -r requirements-gpu.txt
 ```
 
-The launcher uses `<drive root>\cs230-venv\env` automatically (override with `CS230_PYTHON`). Decoded frames, feature caches and checkpoints go to `<drive root>\cs230-cache` (override with `CS230_CACHE`) so tens of GB are not synced to Drive. Metrics and logs go to `visual-memory/output/<run>/`. The first run downloads CLIP / DINOv2 / SAM weights from their official hubs.
+The launcher uses `<project>\cs230-venv\env` automatically (override with `CS230_PYTHON`). Decoded frames, feature caches and checkpoints go to `<project>\cs230-cache` (override with `CS230_CACHE`); both sit beside `visual-memory`, and copies left at the drive root (`<drive>\cs230-venv`, `<drive>\cs230-cache`) are used only until the project-folder ones exist. Commands below run from `visual-memory`. After moving the environment, run pip as `python.exe -m pip` (the `pip.exe` launcher keeps the old path). Metrics and logs go to `visual-memory/output/<run>/`. The first run downloads CLIP / DINOv2 / SAM weights from their official hubs.
 
 ## TempRet: EK-100 Multi-Instance Retrieval (arXiv 2605.24470)
 
 ```powershell
 # decode 16 frames/clip from the raw MP4s + cache CLIP features (resumable)
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --extract-only
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --extract-only
 # zero-shot CLIP baseline (mean pooling)
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 0
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 0
 # train + evaluate (dual encoder each epoch, two-stage reranking at the end)
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10
 # paper ablations
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10 --no-temporal
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10 --no-rerank
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10 --no-temporal
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 10 --no-rerank
 # (re)train only the reranker on top of a trained first stage (~3 min)
-E:\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 0 --rerank-only --checkpoint E:\cs230-cache	empret\checkpoints\<run>est.pt
+..\cs230-venv\env\Scripts\python.exe run_tempret.py --epochs 0 --rerank-only --checkpoint ..\cs230-cache\tempret\checkpoints\<run>\best.pt
 ```
 
 Reranker training. Training the cross-encoder jointly inside the 10 dual-encoder epochs (`--reranker-epochs 0`, the first version) left it near chance (ITM loss 0.50 vs 0.69 for guessing). With the paper's alpha = 0.002 its scores then override the first stage, and reranking dropped ViT-L/14 from 15.6 to 5.1 mAP (old metric; nDCG 33.3 to 23.0) on the local subset. The reranker is therefore trained in its own stage after the first stage:
@@ -76,15 +76,15 @@ Data: the evaluation uses only clips whose video is present. With P01 + P02 only
 
 ```powershell
 # SAM pseudo-masks for every local train query (resumable; rerun as clips download)
-E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage prepare
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage prepare
 # meta-train AMM + GLM + decoder (25k iterations)
-E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage train
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage train
 # online inference on local val clips, official VQ2D metrics
-E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage evaluate --checkpoint E:\cs230-cache\eagle\checkpoints\<run>\last.pt
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage evaluate --checkpoint ..\cs230-cache\eagle\checkpoints\<run>\last.pt
 # ablations
-E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --no-amm      # or --no-glm
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --no-amm      # or --no-glm
 # resume an interrupted run (any stage); its own settings are reused
-E:\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --resume output\eagle-<run>
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --resume output\eagle-<run>
 ```
 
 Interruptions: every stage resumes with `--resume <run folder>`.

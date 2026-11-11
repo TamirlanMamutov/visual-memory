@@ -5,12 +5,26 @@ import random
 import time
 from pathlib import Path
 
-from experiment_paths import HERE, ROOT
+from experiment_paths import HERE, ROOT, project_dir
 
-# Large generated data (decoded frames, feature caches, checkpoints) is kept
-# outside the synced Google Drive folder by default: <drive root>/cs230-cache.
-CACHE = Path(os.environ.get('CS230_CACHE', Path(ROOT.anchor) / 'cs230-cache')).expanduser().resolve()
+# Large generated data (decoded frames, feature caches, checkpoints): <project>/cs230-cache.
+CACHE = Path(os.environ.get('CS230_CACHE', project_dir('cs230-cache'))).expanduser().resolve()
 OUTPUT = HERE / 'output'
+
+
+def portable(path):
+    """A path as it should be recorded in run files: from the cs230-cache folder onwards
+    (e.g. 'cs230-cache/eagle/checkpoints/<run>/last.pt') when it lies in a cache, else relative
+    to the project folder when inside it, so records stay valid after the folders move."""
+    p = Path(path)
+    parts = [x.lower() for x in p.parts]
+    if CACHE.name.lower() in parts:
+        i = len(parts) - 1 - parts[::-1].index(CACHE.name.lower())
+        return Path(*p.parts[i:]).as_posix()
+    try:
+        return p.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return p.as_posix()
 
 
 def make_run_dir(prefix, resume=None):

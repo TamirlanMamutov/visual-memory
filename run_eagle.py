@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from common import CACHE, Logger, device, make_run_dir, seed_everything, torch_save_atomic, write_json
+from common import CACHE, Logger, device, make_run_dir, portable, seed_everything, torch_save_atomic, write_json
 from eagle import data as D
 from eagle.infer import UPDATE_CONF, run_inference, vq_metrics
 from eagle.model import EAGLE, confidence, dcf_hinge, gaussian_label, lovasz_hinge, pixel_losses
@@ -302,9 +302,10 @@ def main():
             sam = D.SamMasker(dev, args.sam)
         # Per-clip predictions are saved as they finish so an interrupted evaluation resumes.
         parts = out / 'eval_parts'; parts.mkdir(exist_ok=True)
-        meta = dict(checkpoint=str(checkpoint), split=args.eval_split, queries=len(records))
+        meta = dict(checkpoint=portable(checkpoint) if checkpoint else None, split=args.eval_split, queries=len(records))
         if (parts / 'meta.json').exists():
             old = json.loads((parts / 'meta.json').read_text(encoding='utf-8'))
+            if old.get('checkpoint'): old['checkpoint'] = portable(old['checkpoint'])   # older runs stored absolute paths
             if old != meta:
                 raise SystemExit(f'{parts} holds predictions for {old}, not {meta}; delete it or use a new run.')
             log(f'Evaluation resume: {len(list(parts.glob("*.json"))) - 1} clips already done')
