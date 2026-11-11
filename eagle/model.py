@@ -217,6 +217,18 @@ class EAGLE(nn.Module):
         return self.decoder(fused, f['seg'], f['image']), hj
 
 
+def use_batch_norm_stats(model):
+    """Normalise with each forward pass's own statistics at inference, as in training.
+    The decoder trains on one frame at a time, and its BatchNorm running averages do not
+    match those per-frame statistics: with them every logit on the val set was negative
+    (no mask at all), while per-frame statistics gave box IoU 0.6-0.8 on the same frames.
+    momentum 0 leaves the stored averages untouched."""
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            m.train(); m.momentum = 0.0
+    return model
+
+
 def confidence(logits):
     """s_conf: mean foreground probability inside the predicted mask (0 if empty)."""
     p = logits.sigmoid().flatten(1)

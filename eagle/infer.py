@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from common import ROOT, write_json
 from eagle import data as D
-from eagle.model import confidence, gaussian_label
+from eagle.model import confidence, gaussian_label, use_batch_norm_stats
 
 UPDATE_CONF = 0.6      # s_conf needed to enter memory
 RESET_CONF = 0.4       # revert to the initial query when confidence stays below this
@@ -170,6 +170,7 @@ def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None)
     instead of recomputed (resumable evaluation)."""
     sys.path.insert(0, str(ROOT / 'VQLoC'))
     model.eval()
+    use_batch_norm_stats(model)
     by_clip = {}
     for r in records:
         by_clip.setdefault(r['clip_uid'], []).append(r)
