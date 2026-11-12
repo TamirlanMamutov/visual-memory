@@ -202,6 +202,114 @@ def build_vq_training_cache(records, sam, log=print, negatives=6, max_track=24, 
         log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(recs)} queries')
 
 
+# ------------------------------------------------------------ EgoTracks ------
+# EgoTracks extends VQ2D queries with a long-term track: the object's box in every frame where it is
+# visible anywhere in the clip, not just in the last occurrence. Same clips, 5-fps frame numbers and
+# visual crops as VQ2D, so the VQ2D reader and cache format are reused.
+
+EGOTRACKS = EGO4D / 'egotracks'
+
+
+def egotracks_available():
+    return (EGOTRACKS / 'egotracks_train.json').is_file()
+
+
+def load_egotracks(split='train', local_only=True):
+    """One record per query set with a long-term track. 'track' holds every box of the long-term
+    track as (frame, xyxy, interpolated); 'clip_frames' is the clip length in 5-fps frames."""
+    data = json.loads((EGOTRACKS / f'egotracks_{split}.json').read_text())
+    have = local_clip_uids() if local_only else None
+    out = []
+    for video in data['videos']:
+        for clip in video['clips']:
+            uid = clip.get('clip_uid')
+            if not uid or (have is not None and uid not in have) or clip.get('exported_clip_uid', uid) != uid:
+                continue
+            n = int(round((clip['clip_end_sec'] - clip['clip_start_sec']) * ANN_FPS))
+            for ai, ann in enumerate(clip['annotations']):
+                for qid, q in ann['query_sets'].items():
+                    lt = q.get('lt_track') or []
+                    if not q.get('is_valid', True) or 'visual_crop' not in q or not lt:
+                        continue
+                    vc = q['visual_crop']
+                    out.append(dict(
+                        key=f'{uid}_{ai}_{qid}', clip_uid=uid, object_title=q.get('object_title', ''),
+                        orig_size=(vc['original_width'], vc['original_height']), clip_frames=n,
+                        visual_crop=(int(vc['frame_number']), _xyxy(vc)),
+                        track=sorted((int(b['frame_number']), _xyxy(b), bool(b.get('interpolated'))) for b in lt)))
+    return out
+
+
+def egotracks_cache_path(key):
+    return EAGLE_CACHE / 'egotracks' / f'{key}.pkl'
+
+
+def plan_egotracks(r, rng, max_track=24, negatives=6, margin=10):
+    """Training frames for one long-term track: `max_track` boxes spread over the whole track (one
+    per equal-size stretch, preferring hand-annotated over interpolated boxes, so different
+    occurrences and viewpoints are covered) and object-free frames at least `margin` frames
+    (2 s) from any box of the track."""
+    track = r['track']
+    picks = []
+    for s in np.array_split(np.arange(len(track)), min(max_track, len(track))):
+        cand = [i for i in s if not track[i][2]] or list(s)
+        picks.append(track[rng.choice(cand)])
+    near = np.zeros(max(r['clip_frames'], max(f for f, _, _ in track) + 1) + margin + 1, bool)
+    for f, _, _ in track:
+        near[max(0, f - margin):f + margin + 1] = True
+    pool = [f for f in range(r['clip_frames']) if not near[f]]
+    neg = sorted(rng.sample(pool, min(negatives, len(pool))))
+    return dict(query=r['visual_crop'], track=[(f, b) for f, b, _ in picks], neg=neg)
+
+
+def build_egotracks_training_cache(records, sam, log=print, seed=0):
+    """Same cache format as build_vq_training_cache (query, track and negative frames as JPEG + SAM
+    pseudo-mask), in <cache>/eagle/egotracks/."""
+    _build_cache(records, sam, log, egotracks_cache_path, 'EgoTracks', lambda r, rng: plan_egotracks(r, rng), seed)
+
+
+def _build_cache(records, sam, log, path_of, name, plan_of, seed):
+    import cv2
+    rng = random.Random(seed)
+    todo = [r for r in records if not path_of(r['key']).exists()]
+    if todo:
+        path_of(todo[0]['key']).parent.mkdir(parents=True, exist_ok=True)
+    log(f'{name} training cache: {len(records) - len(todo)} cached, {len(todo)} to build'
+        + (f' in {path_of(todo[0]["key"]).parent}' if todo else ''))
+    by_clip = {}
+    for r in todo:
+        by_clip.setdefault(r['clip_uid'], []).append(r)
+    for ci, (clip_uid, recs) in enumerate(by_clip.items()):
+        reader = ClipReader(clip_uid, recs[0]['orig_size'])
+        plan = {r['key']: plan_of(r, rng) for r in recs}
+        wanted = set()
+        for p in plan.values():
+            wanted |= {p['query'][0]} | {f for f, _ in p['track']} | set(p['neg'])
+        images = dict(reader.frames(wanted))
+        for r in recs:
+            p = plan[r['key']]
+            items = []
+            for role, entries in [('query', [p['query']]), ('track', p['track']), ('neg', [(f, None) for f in p['neg']])]:
+                for f, box in entries:
+                    if f not in images:
+                        continue
+                    img = images[f]
+                    if box is None:
+                        mask = np.zeros(img.shape[:2], np.uint8); ibox = None
+                    else:
+                        ibox = reader.to_input(box)
+                        mask = sam(img, ibox)
+                    items.append(dict(role=role, frame=f, box=ibox,
+                                      jpg=cv2.imencode('.jpg', img[:, :, ::-1], [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes(),
+                                      mask=cv2.imencode('.png', mask)[1].tobytes()))
+            rec = {k: v for k, v in r.items() if k != 'track'}       # the full track is large; keep the summary
+            rec['track_len'] = len(r.get('track', ()))
+            # atomic: a file under the final name is always complete, so resuming can skip it
+            atomic_write(path_of(r['key']), lambda fh: pickle.dump(dict(record=rec, items=items), fh))
+        reader.close()
+        log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(recs)} queries')
+
+
 def decode_item(item):
     import cv2
     img = cv2.imdecode(np.frombuffer(item['jpg'], np.uint8), cv2.IMREAD_COLOR)[:, :, ::-1].copy()

@@ -75,7 +75,7 @@ Data: the evaluation uses only clips whose video is present. With P01 + P02 only
 ## EAGLE: Ego4D VQ2D, 2D branch (arXiv 2511.08007)
 
 ```powershell
-# SAM pseudo-masks for every local train query (resumable; rerun as clips download)
+# SAM pseudo-masks for every local train query, VQ2D and EgoTracks (resumable; rerun as clips download)
 ..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage prepare
 # meta-train AMM + GLM + decoder (25k iterations)
 ..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage train
@@ -119,9 +119,11 @@ Deviations / assumptions:
 | Segmentation loss | Lovasz | Lovasz + BCE (foreground weight 10) + Dice, output bias initialised to -4 (`--seg-loss lovasz` restores the paper's). Lovasz alone collapsed on VQ2D (objects cover about 0.5 % of a frame): by iteration 1,000 the decoder output logit 0 over the whole image and never segmented anything. With the extra terms, an 800-iteration test reached 0.16 mIoU on object frames |
 | BatchNorm at inference | not stated | each forward pass's own statistics, as in training (the decoder trains one frame at a time). With the stored running averages every val logit was negative and 44 of the first 45 queries got an empty prediction |
 | rho, batch size, sequence length N | not stated | 1.0, 4 sequences, 4 frames |
+| Training data mix | VQ2D, EgoTracks and VISOR; ratios not given | each sequence comes from one source chosen uniformly among those present (`--no-egotracks`, `--no-visor` leave one out) |
+| EgoTracks frames | not stated | per long-term track: the visual crop, 24 boxes spread over the whole track (one per equal stretch, hand-annotated boxes preferred over interpolated ones) and 6 object-free frames at least 2 s from any box; SAM pseudo-masks as for VQ2D |
 | Training negatives | not mentioned | one object-free frame per VQ2D sequence, so confidence is low when the object is absent |
 | Memory crops | crop-and-resize before insertion | full frames, which keeps query and search frames at the same scale |
 | SAM model | not stated | `facebook/sam-vit-base` (change with `--sam facebook/sam-vit-huge`) |
 | 3D (VGGT) branch | yes | not implemented |
 
-Data: VQ2D clips go in `../Ego4D/v2/clips/` (5,823 clips, 346 GB for all splits; see `../Ego4D/download-plans`). VISOR (28.4 GiB, sparse annotations + RGB frames) goes in `../EPIC-KITCHENS-VISOR/` so that `GroundTruth-SparseAnnotations/annotations/train/*.json` and `.../rgb_frames/train/Pxx/*.zip` exist. It is used automatically when present. EgoTracks is only needed for the backbone fine-tuning step, which is not implemented.
+Data: VQ2D clips go in `../Ego4D/v2/clips/` (5,823 clips, 346 GB for all splits; see `../Ego4D/download-plans`). VISOR (28.4 GiB, sparse annotations + RGB frames) goes in `../EPIC-KITCHENS-VISOR/` so that `GroundTruth-SparseAnnotations/annotations/train/*.json` and `.../rgb_frames/train/Pxx/*.zip` exist. It is used automatically when present. EgoTracks annotations go in `../Ego4D/v2/egotracks/` (`egotracks_train.json`, 1.55 GB). They use the VQ2D clips, 5-fps frame numbers and visual crops, so no extra video is needed except 4 train clips, which `lab22 download ego4d -o ../Ego4D --parts clips --uids ...` fetches. Another 4 train clips are not in release v2_1, and their tracks are skipped. The prepare stage caches 13,122 long-term tracks (median 289 boxes each, against 10 for a VQ2D response track) in `<cache>/eagle/egotracks/`, about 1.2 MB per track. Training uses them automatically. Fine-tuning the backbone on EgoTracks is not implemented.

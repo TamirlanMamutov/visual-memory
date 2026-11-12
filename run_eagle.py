@@ -3,7 +3,7 @@
 Stages (run in order, each resumable):
   prepare  - decode query/response-track/negative frames from local VQ2D clips
              and generate SAM pseudo-masks (box + centre-point prompt)
-  train    - meta-train AMM + GLM + decoder on VQ2D (and VISOR when present)
+  train    - meta-train AMM + GLM + decoder on VQ2D (and EgoTracks / VISOR when present)
   evaluate - online inference on VQ2D val clips; tAP25 / stAP25 / Rec / Succ
 Use --stage all for prepare -> train -> evaluate.
 
@@ -45,6 +45,7 @@ def parse():
     p.add_argument('--init-iters', type=int, default=10); p.add_argument('--update-iters', type=int, default=3)
     p.add_argument('--no-amm', action='store_true'); p.add_argument('--no-glm', action='store_true')
     p.add_argument('--no-visor', action='store_true')
+    p.add_argument('--no-egotracks', action='store_true', help='leave EgoTracks long-term tracks out of prepare and training')
     p.add_argument('--max-train-queries', type=int, default=0); p.add_argument('--max-eval-queries', type=int, default=0)
     p.add_argument('--eval-split', default='val')
     p.add_argument('--eval-clips', metavar='A:B', help='evaluate only clips A..B-1 in annotation order, e.g. 351:551')
@@ -68,23 +69,33 @@ def parse():
 # ------------------------------------------------------------- sampling -----
 
 class Sampler:
-    def __init__(self, vq_keys, visor_seqs, seq_len, rng):
+    """Each sequence comes from one source, chosen uniformly among the sources present
+    (VQ2D, EgoTracks, VISOR); the paper does not give mixing ratios."""
+
+    def __init__(self, vq_keys, visor_seqs, seq_len, rng, et_keys=()):
         self.vq, self.visor, self.n, self.rng = vq_keys, visor_seqs, seq_len, rng
+        self.et = list(et_keys)
         self.visor_frames = D.VisorFrames() if visor_seqs else None
 
     def sample(self):
-        if self.visor and (not self.vq or self.rng.random() < 0.5):
-            return self.sample_visor()
-        return self.sample_vq()
+        if not self.et:            # the original two-source rule, unchanged so older runs resume identically
+            if self.visor and (not self.vq or self.rng.random() < 0.5):
+                return self.sample_visor()
+            return self.sample_vq()
+        sources = [s for s, ok in (('vq', self.vq), ('et', self.et), ('visor', self.visor)) if ok]
+        s = self.rng.choice(sources)
+        return self.sample_visor() if s == 'visor' else self.sample_vq(s == 'et')
 
-    def sample_vq(self):
-        with D.vq_cache_path(self.rng.choice(self.vq)).open('rb') as f:
+    def sample_vq(self, egotracks=False):
+        """A cached query (VQ2D or EgoTracks): the visual crop, then track frames plus one object-free frame."""
+        keys, path = (self.et, D.egotracks_cache_path) if egotracks else (self.vq, D.vq_cache_path)
+        with path(self.rng.choice(keys)).open('rb') as f:
             items = pickle.load(f)['items']
         query = [i for i in items if i['role'] == 'query']
         track = [i for i in items if i['role'] == 'track']
         neg = [i for i in items if i['role'] == 'neg']
         if not query or not track:
-            return self.sample_vq()
+            return self.sample_vq(egotracks)
         k = self.n - 1
         n_neg = 1 if neg and k > 1 else 0
         tests = self.rng.sample(track, min(len(track), k - n_neg)) + self.rng.sample(neg, n_neg)
@@ -183,28 +194,35 @@ def train(model, args, out, dev, log):
     if resume is not None:
         # The exact file list of the interrupted run, even if more queries were prepared since.
         vq_keys = resume['train_files']
-        missing = [k for k in vq_keys if not D.vq_cache_path(k).exists()]
+        et_keys = resume.get('egotracks_files', [])     # runs from before EgoTracks support used none
+        missing = [k for k in vq_keys if not D.vq_cache_path(k).exists()] + \
+                  [k for k in et_keys if not D.egotracks_cache_path(k).exists()]
         if missing:
             raise SystemExit(f'{len(missing)} training files of this run are gone from the cache, e.g. {missing[0]}')
     else:
         # Train on every query already prepared (the local clip set can grow between stages).
         vq_keys = sorted(r['key'] for r in D.load_vq('train', local_only=False) if D.vq_cache_path(r['key']).exists())
         if args.max_train_queries: vq_keys = vq_keys[:args.max_train_queries]
+        et_dir = D.EAGLE_CACHE / 'egotracks'
+        et_keys = [] if getattr(args, 'no_egotracks', False) or not et_dir.is_dir() else sorted(p.stem for p in et_dir.glob('*.pkl'))
+        if args.max_train_queries: et_keys = et_keys[:args.max_train_queries]
         write_json(out / 'train_files.json', vq_keys)
+        if et_keys: write_json(out / 'train_files_egotracks.json', et_keys)
     visor = [] if args.no_visor or not D.visor_available() else D.load_visor_sequences('train')
     if resume is not None and len(visor) != resume['visor_sequences']:
         raise SystemExit(f'VISOR changed since the run started ({resume["visor_sequences"]} -> {len(visor)} sequences); '
                          'resume needs the same training data.')
-    log(f'Training data: {len(vq_keys)} VQ2D queries with cached frames/masks, {len(visor)} VISOR object sequences'
+    log(f'Training data: {len(vq_keys)} VQ2D queries with cached frames/masks, {len(et_keys)} EgoTracks long-term tracks, '
+        f'{len(visor)} VISOR object sequences'
         + ('' if D.visor_available() else ' (VISOR not found at ../EPIC-KITCHENS-VISOR)') + f'; list in {out / "train_files.json"}')
-    if not vq_keys and not visor:
+    if not vq_keys and not visor and not et_keys:
         raise SystemExit('No training data. Download VQ2D train clips (and/or VISOR), then run --stage prepare.')
     params = [p for n, p in model.named_parameters() if p.requires_grad and not n.startswith('backbone.')]
     log(f'Trainable parameters: {sum(p.numel() for p in params) / 1e6:.2f} M (backbone frozen)')
     opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.weight_decay)
     warm = min(args.warmup, max(1, args.iters // 10))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min((s + 1) / warm, max(0.0, (args.iters - s) / max(1, args.iters - warm))))
-    sampler = Sampler(vq_keys, visor, args.seq_len, random.Random(args.seed))
+    sampler = Sampler(vq_keys, visor, args.seq_len, random.Random(args.seed), et_keys)
     start = 1
     if resume is not None:
         model.load_state_dict(resume['model'], strict=False)
@@ -216,7 +234,7 @@ def train(model, args, out, dev, log):
     def save(it):
         state = {k: v for k, v in model.state_dict().items() if not k.startswith('backbone.')}
         ck = dict(model=state, args=vars(args), iter=it, opt=opt.state_dict(), sched=sched.state_dict(),
-                  rng=rng_state(sampler), train_files=vq_keys, visor_sequences=len(visor))
+                  rng=rng_state(sampler), train_files=vq_keys, egotracks_files=et_keys, visor_sequences=len(visor))
         torch_save_atomic(ck, last)
         if args.keep_every and it % args.keep_every == 0 and it != args.iters:
             torch_save_atomic(dict(model=state, args=vars(args), iter=it), ck_dir / f'iter_{it}.pt')
@@ -278,6 +296,13 @@ def main():
         if records:
             sam = D.SamMasker(dev, args.sam)
             D.build_vq_training_cache(records, sam, log)
+        if not getattr(args, 'no_egotracks', False) and D.egotracks_available():
+            et = D.load_egotracks('train')
+            if args.max_train_queries: et = random.Random(args.seed).sample(et, min(args.max_train_queries, len(et)))
+            log(f'EgoTracks train long-term tracks on local clips: {len(et)}')
+            if et:
+                sam = sam or D.SamMasker(dev, args.sam)
+                D.build_egotracks_training_cache(et, sam, log)
     checkpoint = args.checkpoint
     own_ck = CACHE / 'eagle' / 'checkpoints' / out.name / 'last.pt'
     if args.resume and not checkpoint and 'train' not in stages and own_ck.exists():

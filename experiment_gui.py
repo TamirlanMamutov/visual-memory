@@ -84,7 +84,7 @@ def eagle_args(o):
          '--rho', _float(o['rho'], 'rho'),
          '--max-train-queries', _int(o['max_train'], 'Max train queries', 0, 10**7),
          '--max-eval-queries', _int(o['max_eval'], 'Max eval queries', 0, 10**7)]
-    for flag in ('no_amm', 'no_glm', 'no_visor'):
+    for flag in ('no_amm', 'no_glm', 'no_visor', 'no_egotracks'):
         if o[flag]: a.append('--' + flag.replace('_', '-'))
     return a
 
@@ -234,7 +234,7 @@ class Launcher:
         self.eg = {k: tk.StringVar(value=v) for k, v in dict(
             iters='25000', batch='4', lr='0.0025', seq='4', rho='1.0', max_train='0', max_eval='0').items()}
         self.eg.update(no_amm=tk.BooleanVar(value=False), no_glm=tk.BooleanVar(value=False),
-                       no_visor=tk.BooleanVar(value=False))
+                       no_visor=tk.BooleanVar(value=False), no_egotracks=tk.BooleanVar(value=False))
         style = ttk.Style()
         style.theme_use('clam')
         style.configure('.', font=('Segoe UI', 10))
@@ -338,7 +338,7 @@ class Launcher:
             ('lr', 'Peak learning rate', 'entry', None), ('seq', 'Frames / sequence', 'entry', None),
             ('rho', 'ρ (L_tck weight)', 'entry', None), ('max_train', 'Max train queries (0 = all)', 'entry', None),
             ('max_eval', 'Max eval queries (0 = all)', 'entry', None)], self.eg)
-        self.checks(tab, [('no_amm', 'Ablation: no AMM'), ('no_glm', 'Ablation: no GLM'), ('no_visor', 'Skip VISOR')], self.eg)
+        self.checks(tab, [('no_amm', 'Ablation: no AMM'), ('no_glm', 'Ablation: no GLM'), ('no_visor', 'Skip VISOR'), ('no_egotracks', 'Skip EgoTracks')], self.eg)
         self.buttons(tab, [('Prepare SAM pseudo-masks', 'EAGLE prepare SAM pseudo-masks'), ('Train', 'EAGLE train'),
                            ('Prepare + train + evaluate', 'EAGLE prepare + train + evaluate'),
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('EAGLE evaluate checkpoint', 'eagle')),
