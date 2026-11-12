@@ -53,6 +53,11 @@ def score(parts, clips, recs):
     raw = {}
     for c in clips:
         raw.update(json.loads((parts / f'{c}.json').read_text(encoding='utf-8')))
+    return score_raw(raw, recs, clips=len(clips))
+
+
+def score_raw(raw, recs, **extra):
+    """raw: {query key: {'score', 'bboxes': [[fno, x1, y1, x2, y2], ...]}} -> official + frame-level metrics."""
     rs = [r for r in recs if r['key'] in raw]
     if not rs:
         return None
@@ -65,7 +70,7 @@ def score(parts, clips, recs):
         ious += [box_iou(gt[f], pr[f]) if f in pr else 0.0 for f in gt]
         tp += len(gt.keys() & pr.keys()); fp += len(pr.keys() - gt.keys()); fn += len(gt.keys() - pr.keys())
     p, rc = tp / max(1, tp + fp), tp / max(1, tp + fn)
-    m.update(clips=len(clips), empty_predictions=sum(1 for k in raw if not raw[k]['bboxes']),
+    m.update(**extra, empty_predictions=sum(1 for k in raw if not raw[k]['bboxes']),
              positive_frame_mean_iou=float(np.mean(ious)), presence_precision=p, presence_recall=rc,
              presence_f1=2 * p * rc / max(1e-12, p + rc))
     return m

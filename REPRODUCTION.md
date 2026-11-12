@@ -87,6 +87,19 @@ Data: the evaluation uses only clips whose video is present. With P01 + P02 only
 ..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage all --resume output\eagle-<run>
 ```
 
+Post-processing tuning. Evaluation also saves each query's per-frame confidences and boxes (`trace` in `eval_parts/<clip>.json`, about 150 KB per clip). Runs made before 2026-11-11 do not have them. `eagle_postproc.py` rebuilds the response tracks offline under a grid of settings: median window, peak threshold, hysteresis extension threshold, gap bridging, last or best peak. It chooses the best setting on one clip range and reports it, next to the paper's rule, on another, so the choice is never made on the reported clips:
+
+```powershell
+# inference with traces on the first 551 val clips (about 6 h); --eval-clips indexes clips in annotation order
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage evaluate --eval-clips 0:551 --checkpoint ..\cs230-cache\eagle\checkpoints\<run>\last.pt
+# tune on clips 351-550, report on clips 0-350 (the subset compared with the baselines)
+..\cs230-venv\env\Scripts\python.exe eagle_postproc.py output\eagle-<new run> --tune 351: --report 0:351
+# apply a chosen setting during evaluation
+..\cs230-venv\env\Scripts\python.exe run_eagle.py --stage evaluate ... --pp-window 9 --pp-peak 0.7 --pp-extend 0.5 --pp-gap 5 --pp-pick last
+```
+
+The defaults (`--pp-window 5 --pp-peak 0.8 --pp-gap 0 --pp-pick last`, no `--pp-extend`) are the paper's rule. The sweep first checks that replaying the setting used online reproduces the stored tracks.
+
 Interruptions: every stage resumes with `--resume <run folder>`.
 - **Prepare** writes one file per query and skips finished ones.
 - **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact list of training files, which is also in `train_files.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`).

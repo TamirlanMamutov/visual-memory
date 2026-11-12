@@ -98,34 +98,69 @@ class QueryState:
             gs = torch.cat([self.init_glm[1], self.glm_dyn[-1][1]]); ss = torch.cat([self.init_glm[2], self.glm_dyn[-1][2]])
         self.c = m.glm.optimise(self.c, feats_t, gs, ss, iters=self.args.update_iters)
 
-    def response_track(self, reader):
-        """Median filter (5) -> peaks -> 0.8 x max peak -> last interval above threshold."""
-        from evaluation.structures import BBox, ResponseTrack
+    def trace(self, reader):
+        """Per-frame confidences and boxes (original image coordinates) for every searched frame,
+        rounded as stored on disk so that offline post-processing reproduces the online track."""
         n = self.r['query_frame']
-        s = np.array([self.scores.get(i, 0.0) for i in range(n)])
-        if n == 0 or s.max() <= 0:
-            return ResponseTrack([], score=0.0)
-        pad = np.pad(s, 2, mode='edge')
-        sm = np.median(np.stack([pad[i:i + n] for i in range(5)]), 0)
-        peaks = [i for i in range(n) if sm[i] > 0 and sm[i] >= sm[max(0, i - 1)] and sm[i] >= sm[min(n - 1, i + 1)]]
-        if not peaks:
-            return ResponseTrack([], score=0.0)
-        thr = 0.8 * max(sm[p] for p in peaks)
-        end = max(p for p in peaks if sm[p] >= thr)
-        start = end
-        while start > 0 and sm[start - 1] >= thr: start -= 1
-        while end < n - 1 and sm[end + 1] >= thr: end += 1
-        bboxes, last = [], None
-        for fno in range(start, end + 1):
-            b = self.boxes.get(fno, last)
-            if b is None:
-                b = next((self.boxes[k] for k in range(fno, end + 1) if k in self.boxes), None)
-            if b is None:
-                continue
-            last = b
-            x1, y1, x2, y2 = reader.to_original(b)
-            bboxes.append(BBox(fno, x1, y1, x2, y2))
-        return ResponseTrack(bboxes, score=float(sm[start:end + 1].max()))
+        scores = [round(self.scores.get(i, 0.0), 6) for i in range(n)]
+        boxes = [[f] + [round(float(v), 2) for v in reader.to_original(b)] for f, b in sorted(self.boxes.items())]
+        return dict(scores=scores, boxes=boxes)
+
+    def response_track(self, reader, trace=None):
+        trace = trace or self.trace(reader)
+        return track_from_trace(trace, **postproc_params(self.args))
+
+
+POSTPROC_DEFAULTS = dict(window=5, peak=0.8, extend=None, gap=0, pick='last')   # the paper's rule
+
+
+def postproc_params(args):
+    return {k: getattr(args, f'pp_{k}', d) for k, d in POSTPROC_DEFAULTS.items()}
+
+
+def track_from_trace(trace, window=5, peak=0.8, extend=None, gap=0, pick='last'):
+    """Per-frame confidences -> response track.
+
+    Paper rule (the defaults): median filter (window 5) -> peaks -> threshold 0.8 x max peak ->
+    the last peak above it, extended while the smoothed score stays above the threshold.
+    extend: extend while above extend x max peak instead (hysteresis; must be <= peak).
+    gap: bridge up to this many consecutive frames below the extension threshold.
+    pick: 'last' peak above the threshold, or the 'best' (highest) peak."""
+    from evaluation.structures import BBox, ResponseTrack
+    s = np.asarray(trace['scores'], dtype=float); n = len(s)
+    if n == 0 or s.max() <= 0:
+        return ResponseTrack([], score=0.0)
+    h = window // 2
+    pad = np.pad(s, h, mode='edge')
+    sm = np.median(np.stack([pad[i:i + n] for i in range(2 * h + 1)]), 0)
+    peaks = [i for i in range(n) if sm[i] > 0 and sm[i] >= sm[max(0, i - 1)] and sm[i] >= sm[min(n - 1, i + 1)]]
+    if not peaks:
+        return ResponseTrack([], score=0.0)
+    top = max(sm[p] for p in peaks)
+    thr, ext = peak * top, (peak if extend is None else extend) * top
+    if pick == 'best':
+        centre = max(p for p in peaks if sm[p] == top)
+    else:
+        centre = max(p for p in peaks if sm[p] >= thr)
+
+    def grow(j, step):
+        while True:
+            k = next((j + step * d for d in range(1, gap + 2) if 0 <= j + step * d < n and sm[j + step * d] >= ext), None)
+            if k is None:
+                return j
+            j = k
+    start, end = grow(centre, -1), grow(centre, 1)
+    boxes = {b[0]: b[1:] for b in trace['boxes']}
+    bboxes, last = [], None
+    for fno in range(start, end + 1):
+        b = boxes.get(fno, last)
+        if b is None:
+            b = next((boxes[k] for k in range(fno, end + 1) if k in boxes), None)
+        if b is None:
+            continue
+        last = b
+        bboxes.append(BBox(fno, *b))
+    return ResponseTrack(bboxes, score=float(sm[start:end + 1].max()))
 
 
 def vq_metrics(records, predictions):
@@ -154,8 +189,11 @@ def vq_metrics(records, predictions):
     return out
 
 
-def track_to_json(t):
-    return dict(score=t.score, bboxes=[[b.fno, b.x1, b.y1, b.x2, b.y2] for b in t.bboxes])   # floats kept
+def track_to_json(t, trace=None):
+    d = dict(score=t.score, bboxes=[[b.fno, b.x1, b.y1, b.x2, b.y2] for b in t.bboxes])   # floats kept
+    if trace is not None:
+        d['trace'] = trace       # per-frame scores and boxes, for offline post-processing (eagle_postproc.py)
+    return d
 
 
 def track_from_json(d):
@@ -214,10 +252,11 @@ def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None)
             buf.append((fno, img))
             if len(buf) == batch: flush()
         if buf: flush()
-        done = {s.r['key']: s.response_track(reader) for s in states}
+        traces = {s.r['key']: s.trace(reader) for s in states}
+        done = {s.r['key']: s.response_track(reader, traces[s.r['key']]) for s in states}
         preds.update(done)
         reader.close()
         if part is not None:
-            write_json(part, {k: track_to_json(v) for k, v in done.items()})
+            write_json(part, {k: track_to_json(v, traces[k]) for k, v in done.items()})
         log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(states)} queries, {stop} frames searched')
     return preds

@@ -25,7 +25,7 @@ import torch.nn.functional as F
 
 from common import CACHE, Logger, device, make_run_dir, portable, seed_everything, torch_save_atomic, write_json
 from eagle import data as D
-from eagle.infer import UPDATE_CONF, run_inference, vq_metrics
+from eagle.infer import POSTPROC_DEFAULTS, UPDATE_CONF, postproc_params, run_inference, vq_metrics
 from eagle.model import EAGLE, confidence, dcf_hinge, gaussian_label, lovasz_hinge, pixel_losses
 
 
@@ -47,6 +47,13 @@ def parse():
     p.add_argument('--no-visor', action='store_true')
     p.add_argument('--max-train-queries', type=int, default=0); p.add_argument('--max-eval-queries', type=int, default=0)
     p.add_argument('--eval-split', default='val')
+    p.add_argument('--eval-clips', metavar='A:B', help='evaluate only clips A..B-1 in annotation order, e.g. 351:551')
+    p.add_argument('--pp-window', type=int, default=5, help='post-processing: median filter length (odd)')
+    p.add_argument('--pp-peak', type=float, default=0.8, help='post-processing: threshold as a fraction of the max peak')
+    p.add_argument('--pp-extend', type=float, default=None,
+                   help='post-processing: extend the interval while above this fraction of the max peak (default: --pp-peak)')
+    p.add_argument('--pp-gap', type=int, default=0, help='post-processing: bridge dips of up to this many frames')
+    p.add_argument('--pp-pick', choices=['last', 'best'], default='last', help='post-processing: which peak to keep')
     p.add_argument('--checkpoint', help='checkpoint to evaluate (default: the one trained in this run)')
     p.add_argument('--resume', metavar='RUN_DIR',
                    help='continue an interrupted run (output/eagle-...): settings, training file list, weights, '
@@ -294,6 +301,10 @@ def main():
         else:
             log('WARNING: no checkpoint - evaluating an untrained model (pipeline check only).')
         records = [r for r in D.load_vq(args.eval_split) if r['response_track']]
+        if getattr(args, 'eval_clips', None):
+            a, b = (int(x) if x else None for x in args.eval_clips.split(':'))
+            keep = set(list(dict.fromkeys(r['clip_uid'] for r in records))[a:b])
+            records = [r for r in records if r['clip_uid'] in keep]
         if args.max_eval_queries: records = random.Random(args.seed).sample(records, min(args.max_eval_queries, len(records)))
         log(f'Evaluation: {len(records)} {args.eval_split} queries on local clips')
         if not records:
@@ -303,6 +314,8 @@ def main():
         # Per-clip predictions are saved as they finish so an interrupted evaluation resumes.
         parts = out / 'eval_parts'; parts.mkdir(exist_ok=True)
         meta = dict(checkpoint=portable(checkpoint) if checkpoint else None, split=args.eval_split, queries=len(records))
+        if postproc_params(args) != POSTPROC_DEFAULTS:
+            meta['postproc'] = postproc_params(args)
         if (parts / 'meta.json').exists():
             old = json.loads((parts / 'meta.json').read_text(encoding='utf-8'))
             if old.get('checkpoint'): old['checkpoint'] = portable(old['checkpoint'])   # older runs stored absolute paths
