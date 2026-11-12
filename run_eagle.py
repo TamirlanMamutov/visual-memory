@@ -50,6 +50,8 @@ def parse():
                    help='train even if the EgoTracks prepare has not finished (uses the tracks cached so far)')
     p.add_argument('--max-train-queries', type=int, default=0); p.add_argument('--max-eval-queries', type=int, default=0)
     p.add_argument('--eval-split', default='val')
+    p.add_argument('--metrics-every', type=float, default=5.0,
+                   help='evaluation: minutes between running_metrics.json updates (0 = only at the end)')
     p.add_argument('--eval-clips', metavar='A:B', help='evaluate only clips A..B-1 in annotation order, e.g. 351:551')
     p.add_argument('--pp-window', type=int, default=5, help='post-processing: median filter length (odd)')
     p.add_argument('--pp-peak', type=float, default=0.8, help='post-processing: threshold as a fraction of the max peak')
@@ -284,6 +286,34 @@ def train(model, args, out, dev, log):
     return last
 
 
+def running_metrics(out, parts, records, args, log):
+    """Progress callback for evaluation: every --metrics-every minutes (and at the last clip),
+    score all clips finished so far and write <run>/running_metrics.json, so current results are
+    never more than a few minutes old. Scoring takes seconds and never stops the evaluation."""
+    from eagle_snapshot import score
+    every = getattr(args, 'metrics_every', 5.0) * 60
+    order = list(dict.fromkeys(r['clip_uid'] for r in records))
+    last = [time.time()]
+
+    def progress(done, total):
+        if not every or (time.time() - last[0] < every and done < total):
+            return
+        last[0] = time.time()
+        try:
+            clips = [c for c in order if (parts / f'{c}.json').exists()]
+            m = score(parts, clips, records)
+            write_json(out / 'running_metrics.json', dict(
+                written=time.strftime('%Y-%m-%d %H:%M:%S'), clips_done=len(clips), clips_total=len(order),
+                note='All clips finished so far (not the final result until clips_done == clips_total). '
+                     'Frame-level metrics are not official VQ2D metrics.', metrics=m))
+            log(f'  running metrics ({len(clips)}/{len(order)} clips, {m["queries"]} queries): '
+                f'stAP25 {m["stAP25"]:.3f} tAP25 {m["tAP25"]:.3f} Succ {m["Succ"]:.1f} Rec {m["Rec"]:.1f} '
+                f'| frame IoU {m["positive_frame_mean_iou"]:.3f} F1 {m["presence_f1"]:.3f}')
+        except Exception as e:                      # metrics must never stop the evaluation
+            log(f'  running metrics failed: {e!r}')
+    return progress
+
+
 def main():
     args = parse()
     out = make_run_dir('eagle', args.resume)
@@ -364,7 +394,8 @@ def main():
             log(f'Evaluation resume: {len(list(parts.glob("*.json"))) - 1} clips already done')
         else:
             write_json(parts / 'meta.json', meta)
-        preds = run_inference(model, records, sam, dev, args, log, parts_dir=parts)
+        preds = run_inference(model, records, sam, dev, args, log, parts_dir=parts,
+                              progress=running_metrics(out, parts, records, args, log))
         metrics = vq_metrics(records, preds)
         log('VQ2D metrics:', json.dumps(metrics))
         pred_json = {k: [b.to_json() for b in v.bboxes] + [{'score': v.score}] for k, v in preds.items()}

@@ -103,7 +103,7 @@ The defaults (`--pp-window 5 --pp-peak 0.8 --pp-gap 0 --pp-pick last`, no `--pp-
 Interruptions: every stage resumes with `--resume <run folder>`.
 - **Prepare** writes one file per query and skips finished ones. EgoTracks frames are chosen with a random generator seeded per track, so a resumed prepare caches exactly what an uninterrupted one would.
 - **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact lists of training files, which are also in `train_files.json` and `train_files_egotracks.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`). On resume, `history.jsonl` rows logged after the checkpoint are dropped and recomputed. A new training run stops if the EgoTracks prepare is unfinished, unless `--allow-partial-cache` or `--no-egotracks` is given.
-- **Evaluation** saves each clip's predictions to `eval_parts/` as it finishes, and skips those clips on restart.
+- **Evaluation** saves each clip's predictions to `eval_parts/` as it finishes, and skips those clips on restart. On full val that's a median of every 36 s and at most 3 minutes. Every 5 minutes (`--metrics-every`) it also scores all clips finished so far, official plus frame-level metrics, into `running_metrics.json` and the log. Scoring takes a few seconds. `eagle_snapshot.py --at` rebuilds the metrics as they stood at any earlier time.
 
 Tested by killing each stage partway through and resuming:
 - **Prepare**, killed after 3 of 8 tracks, built the other 5.

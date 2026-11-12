@@ -202,10 +202,11 @@ def track_from_json(d):
 
 
 @torch.no_grad()
-def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None):
+def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None, progress=None):
     """parts_dir: if given, each clip's predictions are saved there as
     <clip_uid>.json when the clip finishes, and clips already saved are loaded
-    instead of recomputed (resumable evaluation)."""
+    instead of recomputed (resumable evaluation). progress(done, total) is called
+    after each newly evaluated clip."""
     sys.path.insert(0, str(ROOT / 'VQLoC'))
     model.eval()
     use_batch_norm_stats(model)
@@ -259,4 +260,6 @@ def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None)
         if part is not None:
             write_json(part, {k: track_to_json(v, traces[k]) for k, v in done.items()})
         log(f'  [{ci + 1}/{len(by_clip)}] clip {clip_uid}: {len(states)} queries, {stop} frames searched')
+        if progress is not None:
+            progress(ci + 1, len(by_clip))
     return preds
