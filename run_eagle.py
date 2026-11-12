@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from common import CACHE, Logger, device, make_run_dir, portable, seed_everything, torch_save_atomic, write_json
+from common import CACHE, Logger, atomic_write, device, make_run_dir, portable, seed_everything, torch_save_atomic, write_json
 from eagle import data as D
 from eagle.infer import POSTPROC_DEFAULTS, UPDATE_CONF, postproc_params, run_inference, vq_metrics
 from eagle.model import EAGLE, confidence, dcf_hinge, gaussian_label, lovasz_hinge, pixel_losses
@@ -46,6 +46,8 @@ def parse():
     p.add_argument('--no-amm', action='store_true'); p.add_argument('--no-glm', action='store_true')
     p.add_argument('--no-visor', action='store_true')
     p.add_argument('--no-egotracks', action='store_true', help='leave EgoTracks long-term tracks out of prepare and training')
+    p.add_argument('--allow-partial-cache', action='store_true',
+                   help='train even if the EgoTracks prepare has not finished (uses the tracks cached so far)')
     p.add_argument('--max-train-queries', type=int, default=0); p.add_argument('--max-eval-queries', type=int, default=0)
     p.add_argument('--eval-split', default='val')
     p.add_argument('--eval-clips', metavar='A:B', help='evaluate only clips A..B-1 in annotation order, e.g. 351:551')
@@ -206,6 +208,11 @@ def train(model, args, out, dev, log):
         et_dir = D.EAGLE_CACHE / 'egotracks'
         et_keys = [] if getattr(args, 'no_egotracks', False) or not et_dir.is_dir() else sorted(p.stem for p in et_dir.glob('*.pkl'))
         if args.max_train_queries: et_keys = et_keys[:args.max_train_queries]
+        elif et_keys and D.egotracks_available():
+            n_local = len(D.load_egotracks('train'))
+            if len(et_keys) < n_local and not args.allow_partial_cache:
+                raise SystemExit(f'Only {len(et_keys)} of {n_local} local EgoTracks tracks are prepared. Finish '
+                                 '--stage prepare (it resumes), or pass --allow-partial-cache / --no-egotracks.')
         write_json(out / 'train_files.json', vq_keys)
         if et_keys: write_json(out / 'train_files_egotracks.json', et_keys)
     visor = [] if args.no_visor or not D.visor_available() else D.load_visor_sequences('train')
@@ -230,6 +237,14 @@ def train(model, args, out, dev, log):
         set_rng_state(resume['rng'], sampler)
         start = resume['iter'] + 1
         log(f'Resuming training at iteration {start} from {last}')
+        # Rows logged after the checkpoint was saved are recomputed now; drop them so none repeat.
+        hist = out / 'history.jsonl'
+        if hist.exists():
+            rows = [l for l in hist.read_text(encoding='utf-8').splitlines() if l.strip()]
+            keep = [l for l in rows if json.loads(l).get('iter', 0) <= resume['iter']]
+            if len(keep) != len(rows):
+                atomic_write(hist, lambda f: f.write(''.join(l + '\n' for l in keep).encode('utf-8')))
+                log(f'  dropped {len(rows) - len(keep)} history rows logged after iteration {resume["iter"]}')
 
     def save(it):
         state = {k: v for k, v in model.state_dict().items() if not k.startswith('backbone.')}
@@ -352,8 +367,8 @@ def main():
         preds = run_inference(model, records, sam, dev, args, log, parts_dir=parts)
         metrics = vq_metrics(records, preds)
         log('VQ2D metrics:', json.dumps(metrics))
-        with (out / 'predictions.json').open('w') as f:
-            json.dump({k: [b.to_json() for b in v.bboxes] + [{'score': v.score}] for k, v in preds.items()}, f)
+        pred_json = {k: [b.to_json() for b in v.bboxes] + [{'score': v.score}] for k, v in preds.items()}
+        atomic_write(out / 'predictions.json', lambda f: f.write(json.dumps(pred_json).encode('utf-8')))
         write_json(out / 'metrics.json', dict(final=metrics, checkpoint=checkpoint, split=args.eval_split))
     (out / 'COMPLETE').write_text('done\n')
 

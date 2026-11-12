@@ -265,7 +265,12 @@ def plan_egotracks(r, rng, max_track=24, negatives=6, margin=10):
 def build_egotracks_training_cache(records, sam, log=print, seed=0):
     """Same cache format as build_vq_training_cache (query, track and negative frames as JPEG + SAM
     pseudo-mask), in <cache>/eagle/egotracks/."""
-    _build_cache(records, sam, log, egotracks_cache_path, 'EgoTracks', lambda r, rng: plan_egotracks(r, rng), seed)
+    # One RNG per track, seeded by its key: the frames chosen for a track do not depend on which
+    # tracks were still to build, so an interrupted and resumed prepare caches exactly what an
+    # uninterrupted one would.
+    import zlib
+    _build_cache(records, sam, log, egotracks_cache_path, 'EgoTracks',
+                 lambda r, _: plan_egotracks(r, random.Random(zlib.crc32(f'{seed}:{r["key"]}'.encode()))), seed)
 
 
 def _build_cache(records, sam, log, path_of, name, plan_of, seed):

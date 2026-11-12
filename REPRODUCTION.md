@@ -101,9 +101,14 @@ Post-processing tuning. Evaluation also saves each query's per-frame confidences
 The defaults (`--pp-window 5 --pp-peak 0.8 --pp-gap 0 --pp-pick last`, no `--pp-extend`) are the paper's rule. The sweep first checks that replaying the setting used online reproduces the stored tracks.
 
 Interruptions: every stage resumes with `--resume <run folder>`.
-- **Prepare** writes one file per query and skips finished ones.
-- **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact list of training files, which is also in `train_files.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`).
+- **Prepare** writes one file per query and skips finished ones. EgoTracks frames are chosen with a random generator seeded per track, so a resumed prepare caches exactly what an uninterrupted one would.
+- **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact lists of training files, which are also in `train_files.json` and `train_files_egotracks.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`). On resume, `history.jsonl` rows logged after the checkpoint are dropped and recomputed. A new training run stops if the EgoTracks prepare is unfinished, unless `--allow-partial-cache` or `--no-egotracks` is given.
 - **Evaluation** saves each clip's predictions to `eval_parts/` as it finishes, and skips those clips on restart.
+
+Tested by killing each stage partway through and resuming:
+- **Prepare**, killed after 3 of 8 tracks, built the other 5.
+- **Training**, killed at iteration 25, resumed from 20, and iteration 25's loss matched the first attempt: 1.9322 against 1.9321.
+- **Evaluation**, killed after 1 of 3 clips, gave the same metrics as an uninterrupted run.
 
 All writes go through a temporary file and a rename, so an interruption never leaves a half-written file under its final name.
 
