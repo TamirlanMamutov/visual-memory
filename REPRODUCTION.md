@@ -105,6 +105,18 @@ Interruptions: every stage resumes with `--resume <run folder>`.
 - **Training** saves a resumable `last.pt` every 500 iterations (`--save-every`). It holds the weights, optimiser, learning-rate schedule, RNG states and the exact lists of training files, which are also in `train_files.json` and `train_files_egotracks.json`. A permanent `iter_N.pt` is kept every 2,500 iterations (`--keep-every`). On resume, `history.jsonl` rows logged after the checkpoint are dropped and recomputed. A new training run stops if the EgoTracks prepare is unfinished, unless `--allow-partial-cache` or `--no-egotracks` is given.
 - **Evaluation** saves each clip's predictions to `eval_parts/` as it finishes, and skips those clips on restart. On full val that's a median of every 36 s and at most 3 minutes. Every 5 minutes (`--metrics-every`) it also scores all clips finished so far, official plus frame-level metrics, into `running_metrics.json` and the log. Scoring takes a few seconds. `eagle_snapshot.py --at` rebuilds the metrics as they stood at any earlier time.
 
+Backbone fine-tuning (`--finetune-blocks N`): checkpoints then also hold the fine-tuned DINOv2 tensors (38 for N = 2), and evaluation loads them (the log says `loaded 38 fine-tuned DINOv2 tensors`). Measured on the RTX 4070 (12 GB) with batch 4 x 4 frames:
+
+| N | DINOv2 params trained | s / iteration | Peak GPU memory |
+|---|---|---|---|
+| 0 (frozen) | 0 | 0.63 | 1.9 GB |
+| 2 | 14.2 M | 0.63 | 3.3 GB |
+| 4 | 28.4 M | 0.70 | 4.7 GB |
+| 6 | 42.5 M | 0.73 | 6.0 GB |
+| 12 (all) | 85.1 M | 7.2 | 9.9 GB (spills into shared memory next to other GPU users) |
+
+`--grad-checkpoint` lowers the memory of the fine-tuned blocks at some speed cost. A kill-and-resume test with N = 2 restored all 38 tensors and matched the loss at the next logged iteration (2.1436 before the kill, 2.1432 after). Two separate fresh runs with the same seed are not bit-identical on the GPU, so compare a run with its own resumed self.
+
 Tested by killing each stage partway through and resuming:
 - **Prepare**, killed after 3 of 8 tracks, built the other 5.
 - **Training**, killed at iteration 25, resumed from 20, and iteration 25's loss matched the first attempt: 1.9322 against 1.9321.
@@ -118,7 +130,7 @@ Deviations / assumptions:
 
 | Item | Paper | Here |
 |---|---|---|
-| Backbone | DINOv2 fine-tuned on EgoTracks, then frozen | pretrained DINOv2, frozen (no EgoTracks fine-tuning yet) |
+| Backbone | DINOv2 fine-tuned on EgoTracks, then frozen | pretrained DINOv2, frozen by default. `--finetune-blocks N` instead trains the last N blocks and the final LayerNorm together with the heads, on the same VQ2D + EgoTracks (+ VISOR) sequences, at peak lr `--backbone-lr` (default 2.5e-5, with the heads' warm-up and decay). This is a stand-in for the paper's separate fine-tuning stage, whose objective and schedule it does not give |
 | Decoder, P/W nets, kernel sizes, D | not specified | LWL-style choices: 256-ch reduced features, D = 16, 3 x 3 sigma, 5 x 5 DCF, light RGB stem for boundaries |
 | Tracking during training | frozen pretrained tracker | no pretrained tracker exists here; its feature reducer is trained with L_tck |
 | Segmentation loss | Lovasz | Lovasz + BCE (foreground weight 10) + Dice, output bias initialised to -4 (`--seg-loss lovasz` restores the paper's). Lovasz alone collapsed on VQ2D (objects cover about 0.5 % of a frame): by iteration 1,000 the decoder output logit 0 over the whole image and never segmented anything. With the extra terms, an 800-iteration test reached 0.16 mIoU on object frames |
@@ -131,4 +143,4 @@ Deviations / assumptions:
 | SAM model | not stated | `facebook/sam-vit-base` (change with `--sam facebook/sam-vit-huge`) |
 | 3D (VGGT) branch | yes | not implemented |
 
-Data: VQ2D clips go in `../Ego4D/v2/clips/` (5,823 clips, 346 GB for all splits; see `../Ego4D/download-plans`). VISOR (28.4 GiB, sparse annotations + RGB frames) goes in `../EPIC-KITCHENS-VISOR/` so that `GroundTruth-SparseAnnotations/annotations/train/*.json` and `.../rgb_frames/train/Pxx/*.zip` exist. It is used automatically when present. EgoTracks annotations go in `../Ego4D/v2/egotracks/` (`egotracks_train.json`, 1.55 GB). They use the VQ2D clips, 5-fps frame numbers and visual crops, so no extra video is needed except 4 train clips, which `lab22 download ego4d -o ../Ego4D --parts clips --uids ...` fetches. Another 4 train clips are not in release v2_1, and their tracks are skipped. The prepare stage caches 13,122 long-term tracks (median 289 boxes each, against 10 for a VQ2D response track) in `<cache>/eagle/egotracks/`, about 1.2 MB per track. Training uses them automatically. Fine-tuning the backbone on EgoTracks is not implemented.
+Data: VQ2D clips go in `../Ego4D/v2/clips/` (5,823 clips, 346 GB for all splits; see `../Ego4D/download-plans`). VISOR (28.4 GiB, sparse annotations + RGB frames) goes in `../EPIC-KITCHENS-VISOR/` so that `GroundTruth-SparseAnnotations/annotations/train/*.json` and `.../rgb_frames/train/Pxx/*.zip` exist. It is used automatically when present. EgoTracks annotations go in `../Ego4D/v2/egotracks/` (`egotracks_train.json`, 1.55 GB). They use the VQ2D clips, 5-fps frame numbers and visual crops, so no extra video is needed except 4 train clips, which `lab22 download ego4d -o ../Ego4D --parts clips --uids ...` fetches. Another 4 train clips are not in release v2_1, and their tracks are skipped. The prepare stage caches 13,122 long-term tracks (median 289 boxes each, against 10 for a VQ2D response track) in `<cache>/eagle/egotracks/`, about 1.2 MB per track. Training uses them automatically. To fine-tune the backbone as well, add `--finetune-blocks N` (see above).

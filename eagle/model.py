@@ -1,4 +1,4 @@
-"""EAGLE (arXiv 2511.08007) 2D branch: frozen DINOv2 backbone, appearance-aware
+"""EAGLE (arXiv 2511.08007) 2D branch: DINOv2 backbone (frozen, or last blocks fine-tuned), appearance-aware
 meta-learning memory (AMM, Eq. 1-2), geometry-aware localization memory with a
 discriminative correlation filter (GLM, Eq. 3-4), fusion F_N = F_A + kappa(H_J)
 and a mask decoder.
@@ -20,28 +20,43 @@ def conv_bn_relu(i, o, k=3):
 
 
 class Backbone(nn.Module):
-    """DINOv2 ViT (frozen). 448x448 input -> 32x32 patch features."""
+    """DINOv2 ViT. 448x448 input -> 32x32 patch features.
 
-    def __init__(self, name='facebook/dinov2-base'):
+    finetune_blocks = 0: fully frozen (forward under no_grad).
+    finetune_blocks = N > 0: the last N transformer blocks and the final LayerNorm are trainable;
+    the earlier blocks stay frozen, so autograd only keeps activations from block -N onward.
+    The ViT stays in eval mode either way (DINOv2 has no BatchNorm; dropout / drop-path are 0)."""
+
+    def __init__(self, name='facebook/dinov2-base', finetune_blocks=0, grad_checkpoint=False):
         super().__init__()
         from transformers import Dinov2Model
         self.vit = Dinov2Model.from_pretrained(name)
         self.vit.requires_grad_(False).eval()
         self.dim = self.vit.config.hidden_size
         self.patch = self.vit.config.patch_size
+        blocks = self.vit.encoder.layer
+        if not 0 <= finetune_blocks <= len(blocks):
+            raise ValueError(f'finetune_blocks must be 0..{len(blocks)}, got {finetune_blocks}')
+        self.finetune_blocks = finetune_blocks
+        if finetune_blocks:
+            for b in blocks[len(blocks) - finetune_blocks:]:
+                b.requires_grad_(True)
+            self.vit.layernorm.requires_grad_(True)
+            if grad_checkpoint:
+                self.vit.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(use_reentrant=False))
 
     def train(self, mode=True):
         super().train(mode); self.vit.eval(); return self
 
-    @torch.no_grad()
     def forward(self, images):
         """images: uint8 [B, H, W, 3] or float [B, 3, H, W] in 0..1."""
-        if images.dtype == torch.uint8:
-            images = images.permute(0, 3, 1, 2).float() / 255
-        x = (images - IMNET_MEAN.to(images.device)) / IMNET_STD.to(images.device)
-        h, w = x.shape[2] // self.patch, x.shape[3] // self.patch
-        tok = self.vit(pixel_values=x).last_hidden_state[:, 1:]          # drop CLS
-        return tok.transpose(1, 2).reshape(x.shape[0], self.dim, h, w)
+        with torch.set_grad_enabled(bool(self.finetune_blocks) and self.training and torch.is_grad_enabled()):
+            if images.dtype == torch.uint8:
+                images = images.permute(0, 3, 1, 2).float() / 255
+            x = (images - IMNET_MEAN.to(images.device)) / IMNET_STD.to(images.device)
+            h, w = x.shape[2] // self.patch, x.shape[3] // self.patch
+            tok = self.vit(pixel_values=x).last_hidden_state[:, 1:]          # drop CLS
+            return tok.transpose(1, 2).reshape(x.shape[0], self.dim, h, w)
 
 
 # ------------------------------------------------------------------ AMM -----
@@ -192,9 +207,10 @@ class Decoder(nn.Module):
 
 
 class EAGLE(nn.Module):
-    def __init__(self, backbone='facebook/dinov2-base', feat_dim=256, enc_dim=16, use_glm=True, use_amm=True):
+    def __init__(self, backbone='facebook/dinov2-base', feat_dim=256, enc_dim=16, use_glm=True, use_amm=True,
+                 finetune_blocks=0, grad_checkpoint=False):
         super().__init__()
-        self.backbone = Backbone(backbone)
+        self.backbone = Backbone(backbone, finetune_blocks, grad_checkpoint)
         self.stride = self.backbone.patch
         self.seg_reduce = conv_bn_relu(self.backbone.dim, feat_dim, 1)
         self.tck_reduce = conv_bn_relu(self.backbone.dim, feat_dim, 1)

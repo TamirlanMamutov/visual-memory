@@ -33,6 +33,13 @@ def parse():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--stage', choices=['prepare', 'train', 'evaluate', 'all'], default='all')
     p.add_argument('--backbone', default='facebook/dinov2-base', help='paper: DINOv2 ViT-B/14 at 448')
+    p.add_argument('--finetune-blocks', type=int, default=0,
+                   help='train the last N DINOv2 blocks (+ final LayerNorm) with the heads; 0 = frozen backbone. '
+                        'The paper fine-tunes DINOv2 on EgoTracks in a separate stage whose recipe it does not give')
+    p.add_argument('--backbone-lr', type=float, default=2.5e-5,
+                   help='peak learning rate of the fine-tuned DINOv2 blocks (same warm-up and decay as --lr)')
+    p.add_argument('--grad-checkpoint', action='store_true',
+                   help='recompute the fine-tuned blocks in the backward pass (less GPU memory, slower)')
     p.add_argument('--sam', default='facebook/sam-vit-base', help='SAM checkpoint for pseudo-masks')
     p.add_argument('--iters', type=int, default=25000, help='paper: 25k iterations')
     p.add_argument('--warmup', type=int, default=2500)
@@ -185,6 +192,28 @@ def set_rng_state(s, sampler):
     if 'cuda' in s and torch.cuda.is_available(): torch.cuda.set_rng_state_all(s['cuda'])
 
 
+def model_state(model):
+    """Weights to save: everything except the frozen pretrained DINOv2 tensors (reloaded from
+    Hugging Face), but including any fine-tuned DINOv2 blocks."""
+    tuned = {n for n, p in model.named_parameters() if n.startswith('backbone.') and p.requires_grad}
+    return {k: v for k, v in model.state_dict().items() if not k.startswith('backbone.') or k in tuned}
+
+
+def load_weights(model, ck, log=None):
+    """Load a checkpoint's weights; checks that fine-tuned DINOv2 blocks, if any, were all restored."""
+    state = ck['model']
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    bad = [k for k in missing if not k.startswith('backbone.')] + list(unexpected)
+    if bad:
+        raise SystemExit(f'Checkpoint does not match the model: {bad[:5]}')
+    n_bb = sum(k.startswith('backbone.') for k in state)
+    want = ck.get('args', {}).get('finetune_blocks', 0)
+    if want and not n_bb:
+        raise SystemExit(f'Checkpoint was trained with --finetune-blocks {want} but holds no DINOv2 weights')
+    if log and n_bb:
+        log(f'  loaded {n_bb} fine-tuned DINOv2 tensors (last {want} blocks)')
+
+
 def train(model, args, out, dev, log):
     ck_dir = CACHE / 'eagle' / 'checkpoints' / out.name; ck_dir.mkdir(parents=True, exist_ok=True)
     last = ck_dir / 'last.pt'
@@ -226,15 +255,21 @@ def train(model, args, out, dev, log):
         + ('' if D.visor_available() else ' (VISOR not found at ../EPIC-KITCHENS-VISOR)') + f'; list in {out / "train_files.json"}')
     if not vq_keys and not visor and not et_keys:
         raise SystemExit('No training data. Download VQ2D train clips (and/or VISOR), then run --stage prepare.')
-    params = [p for n, p in model.named_parameters() if p.requires_grad and not n.startswith('backbone.')]
-    log(f'Trainable parameters: {sum(p.numel() for p in params) / 1e6:.2f} M (backbone frozen)')
-    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.weight_decay)
+    heads = [p for n, p in model.named_parameters() if p.requires_grad and not n.startswith('backbone.')]
+    bb = [p for n, p in model.named_parameters() if p.requires_grad and n.startswith('backbone.')]
+    params = heads + bb
+    nb = getattr(args, 'finetune_blocks', 0)
+    log(f'Trainable parameters: {sum(p.numel() for p in heads) / 1e6:.2f} M heads'
+        + (f' + {sum(p.numel() for p in bb) / 1e6:.2f} M DINOv2 (last {nb} blocks + final LayerNorm, '
+           f'peak lr {args.backbone_lr:g})' if bb else ' (backbone frozen)'))
+    groups = [dict(params=heads, lr=args.lr)] + ([dict(params=bb, lr=args.backbone_lr)] if bb else [])
+    opt = torch.optim.AdamW(groups, lr=args.lr, weight_decay=args.weight_decay)
     warm = min(args.warmup, max(1, args.iters // 10))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min((s + 1) / warm, max(0.0, (args.iters - s) / max(1, args.iters - warm))))
     sampler = Sampler(vq_keys, visor, args.seq_len, random.Random(args.seed), et_keys)
     start = 1
     if resume is not None:
-        model.load_state_dict(resume['model'], strict=False)
+        load_weights(model, resume, log)
         opt.load_state_dict(resume['opt']); sched.load_state_dict(resume['sched'])
         set_rng_state(resume['rng'], sampler)
         start = resume['iter'] + 1
@@ -249,7 +284,7 @@ def train(model, args, out, dev, log):
                 log(f'  dropped {len(rows) - len(keep)} history rows logged after iteration {resume["iter"]}')
 
     def save(it):
-        state = {k: v for k, v in model.state_dict().items() if not k.startswith('backbone.')}
+        state = model_state(model)
         ck = dict(model=state, args=vars(args), iter=it, opt=opt.state_dict(), sched=sched.state_dict(),
                   rng=rng_state(sampler), train_files=vq_keys, egotracks_files=et_keys, visor_sequences=len(visor))
         torch_save_atomic(ck, last)
@@ -276,9 +311,12 @@ def train(model, args, out, dev, log):
                        pos_iou50=acc['pos_hit'] / max(1, acc['pos']), pos_miou=acc['pos_iou'] / max(1, acc['pos']),
                        neg_empty=acc['neg_ok'] / max(1, acc['neg']),
                        lr=sched.get_last_lr()[0], seconds=round(time.time() - t0, 1))
+            if dev.type == 'cuda':
+                row['gpu_peak_gb'] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
             log(f"  iter {it}/{args.iters} | L_seg {row['seg']:.4f} | L_tck {row['tck']:.5f} | "
                 f"object frames: IoU>0.5 {row['pos_iou50']:.3f}, mIoU {row['pos_miou']:.3f} | "
-                f"empty frames correct {row['neg_empty']:.3f} | lr {row['lr']:.2e} | {row['seconds']:.0f}s")
+                f"empty frames correct {row['neg_empty']:.3f} | lr {row['lr']:.2e} | {row['seconds']:.0f}s"
+                + (f" | GPU peak {row['gpu_peak_gb']:.1f} GB" if 'gpu_peak_gb' in row else ''))
             with (out / 'history.jsonl').open('a') as f: f.write(json.dumps(row) + '\n')
             acc = fresh()
         if it % args.save_every == 0 or it == args.iters:
@@ -354,19 +392,21 @@ def main():
         checkpoint = str(own_ck)           # evaluate-only resume: use the run's own weights
     if checkpoint:        # architecture comes from the checkpoint, not the current form settings
         saved = torch.load(checkpoint, map_location='cpu', weights_only=False).get('args', {})
-        for k in ('backbone', 'no_amm', 'no_glm'):
+        arch = ('backbone', 'no_amm', 'no_glm') + (() if 'train' in stages else ('finetune_blocks',))
+        for k in arch:
             if k in saved and getattr(args, k) != saved[k]:
                 log(f'Using checkpoint setting {k}={saved[k]}'); setattr(args, k, saved[k])
-    model = EAGLE(args.backbone, use_glm=not args.no_glm, use_amm=not args.no_amm).to(dev)
+    model = EAGLE(args.backbone, use_glm=not args.no_glm, use_amm=not args.no_amm,
+                  finetune_blocks=args.finetune_blocks, grad_checkpoint=args.grad_checkpoint).to(dev)
     if 'train' in stages:
         print('Starting train', flush=True)
         if checkpoint and not (args.resume and own_ck.exists()):   # initial weights for a fresh run
-            model.load_state_dict(torch.load(checkpoint, map_location=dev, weights_only=False)['model'], strict=False)
+            load_weights(model, torch.load(checkpoint, map_location=dev, weights_only=False), log)
         checkpoint = str(train(model, args, out, dev, log))
     if 'evaluate' in stages:
         print('Starting evaluate', flush=True)
         if checkpoint:
-            model.load_state_dict(torch.load(checkpoint, map_location=dev, weights_only=False)['model'], strict=False)
+            load_weights(model, torch.load(checkpoint, map_location=dev, weights_only=False), log)
             log('Evaluating', checkpoint)
         else:
             log('WARNING: no checkpoint - evaluating an untrained model (pipeline check only).')
