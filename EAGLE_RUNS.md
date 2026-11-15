@@ -64,9 +64,9 @@ python eagle_sam2.py output\eagle-20261111-221053 --clips 0:351 --model facebook
 
 We passed a local download of `facebook/sam2.1-hiera-small` as `--model`; the Hugging Face ID shown above gives the same weights. The script reports three variants: `replace`, `trim` and `extend`. The `extend` variant gave the best results.
 
-## 5. VQ2D + EgoTracks + VISOR: `eagle-20261114-204835` (in progress)
+## 5. VQ2D + EgoTracks + VISOR: `eagle-20261114-204835`
 
-Started Nov 14 20:48 at commit `aee6859`. The training mix is VQ2D 50%, EgoTracks 25%, VISOR 25% (`--mix 2,1,1`, the default).
+Started Nov 14 20:48 at commit `aee6859`. Training finished Nov 15 01:49 and evaluation Nov 15 14:27, with no resumes. The training mix is VQ2D 50%, EgoTracks 25%, VISOR 25% (`--mix 2,1,1`, the default).
 
 ```bash
 git checkout aee6859
@@ -86,4 +86,9 @@ VISOR must be unzipped at `..\EPIC-KITCHENS-VISOR\GroundTruth-SparseAnnotations`
 | 3. Fine-tuned 4 blocks | 0.445 | 0.378 | 0.265 | 0.180 | 62.89 | 43.58 |
 | 2 on clips 0–350 only | 0.486 | 0.400 | 0.300 | 0.189 | 64.63 | 47.40 |
 | 4. 2 + SAM 2 `extend`, clips 0–350 | 0.533 | 0.448 | 0.377 | 0.250 | 65.46 | 55.52 |
-| 5. VISOR | pending | | | | | |
+| 5. VISOR | 0.450 | 0.351 | 0.260 | 0.161 | 63.18 | 44.14 |
+| 5 on clips 0–350 only | 0.456 | 0.364 | 0.266 | 0.173 | 62.69 | 44.69 |
+
+All full-val rows score 4,501 queries; the clips 0–350 rows score 1,348.
+
+Adding VISOR (run 5) lowered every metric compared with run 2, on both the full val set and clips 0–350. A likely cause is that VISOR's 25% share cut EgoTracks from about 50% of the training mix to 25%. Training metrics didn't predict this: run 5 was ahead of run 2 throughout training.
