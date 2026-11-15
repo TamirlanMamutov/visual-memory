@@ -52,6 +52,9 @@ def parse():
     p.add_argument('--init-iters', type=int, default=10); p.add_argument('--update-iters', type=int, default=3)
     p.add_argument('--no-amm', action='store_true'); p.add_argument('--no-glm', action='store_true')
     p.add_argument('--no-visor', action='store_true')
+    p.add_argument('--mix', default='2,1,1', metavar='VQ,ET,VISOR',
+                   help='source weights of training sequences when VISOR is used (default 2,1,1: VQ2D half, '
+                        'EgoTracks and VISOR a quarter each). Without VISOR, VQ2D and EgoTracks are equal')
     p.add_argument('--no-egotracks', action='store_true', help='leave EgoTracks long-term tracks out of prepare and training')
     p.add_argument('--allow-partial-cache', action='store_true',
                    help='train even if the EgoTracks prepare has not finished (uses the tracks cached so far)')
@@ -80,22 +83,29 @@ def parse():
 # ------------------------------------------------------------- sampling -----
 
 class Sampler:
-    """Each sequence comes from one source, chosen uniformly among the sources present
-    (VQ2D, EgoTracks, VISOR); the paper does not give mixing ratios."""
+    """Each sequence comes from one source (VQ2D, EgoTracks, VISOR); the paper does not give mixing
+    ratios. Without VISOR the source is VQ2D or EgoTracks with equal probability (unchanged, so
+    older runs resume identically). With VISOR the sources are drawn with weights `mix`
+    (VQ2D, EgoTracks, VISOR; default 2:1:1, so VQ2D, the task itself, keeps half the sequences)."""
 
-    def __init__(self, vq_keys, visor_seqs, seq_len, rng, et_keys=()):
+    def __init__(self, vq_keys, visor_seqs, seq_len, rng, et_keys=(), mix=(2, 1, 1)):
         self.vq, self.visor, self.n, self.rng = vq_keys, visor_seqs, seq_len, rng
         self.et = list(et_keys)
         self.visor_frames = D.VisorFrames() if visor_seqs else None
+        present = [(s, w) for s, ok, w in zip(('vq', 'et', 'visor'), (self.vq, self.et, self.visor), mix) if ok and w > 0]
+        self.sources, self.weights = [s for s, _ in present], [w for _, w in present]
+        # VISOR negatives come from another participant's kitchen (see sample_visor).
+        self.visor_by_person = {}
+        for i, (video, _, _) in enumerate(visor_seqs):
+            self.visor_by_person.setdefault(video.split('_')[0], []).append(i)
 
     def sample(self):
-        if not self.et:            # the original two-source rule, unchanged so older runs resume identically
-            if self.visor and (not self.vq or self.rng.random() < 0.5):
-                return self.sample_visor()
+        if self.visor:
+            s = self.rng.choices(self.sources, self.weights)[0]
+            return self.sample_visor() if s == 'visor' else self.sample_vq(s == 'et')
+        if not self.et:
             return self.sample_vq()
-        sources = [s for s, ok in (('vq', self.vq), ('et', self.et), ('visor', self.visor)) if ok]
-        s = self.rng.choice(sources)
-        return self.sample_visor() if s == 'visor' else self.sample_vq(s == 'et')
+        return self.sample_vq(self.rng.choice([s for s, ok in (('vq', self.vq), ('et', self.et)) if ok]) == 'et')
 
     def sample_vq(self, egotracks=False):
         """A cached query (VQ2D or EgoTracks): the visual crop, then track frames plus one object-free frame."""
@@ -117,19 +127,32 @@ class Sampler:
             out.append((img, mask))
         return out
 
-    def sample_visor(self):
+    def visor_frame(self, video, name, polys):
+        """Letterboxed VISOR frame and its ground-truth mask (empty when polys is None)."""
         import cv2
+        img = self.visor_frames.image(video, name, half=True)        # e.g. 1920x1080 -> 960x540, polygons halved
+        mask = D.polygons_to_mask([np.asarray(p, np.float32) / 2 for p in (polys or [])], img.shape)
+        img, s = D.letterbox(img)
+        m = cv2.resize(mask, (round(mask.shape[1] * s), round(mask.shape[0] * s)), interpolation=cv2.INTER_NEAREST)
+        mm = np.zeros(img.shape[:2], np.uint8); mm[:m.shape[0], :m.shape[1]] = m
+        return img, mm
+
+    def sample_visor(self):
+        """One VISOR object (one subsequence): a random annotated frame as the query, then other frames
+        of the object in time order plus, like VQ2D, one object-free frame. VISOR masks only the objects
+        being handled, so an unannotated frame of the same video may still show the object; the
+        object-free frame therefore comes from another participant's kitchen, where it cannot appear."""
         video, obj, frames = self.rng.choice(self.visor)
-        pick = sorted(self.rng.sample(range(len(frames)), min(self.n, len(frames))))
-        out = []
-        for j in pick:
-            name, polys = frames[j]
-            img = self.visor_frames.image(video, name)
-            mask = D.polygons_to_mask(polys, img.shape)
-            img, s = D.letterbox(img)
-            m = cv2.resize(mask, (round(mask.shape[1] * s), round(mask.shape[0] * s)), interpolation=cv2.INTER_NEAREST)
-            mm = np.zeros(img.shape[:2], np.uint8); mm[:m.shape[0], :m.shape[1]] = m
-            out.append((img, mm))
+        k = self.n - 1
+        others = [p for p in self.visor_by_person if p != video.split('_')[0]]
+        n_neg = 1 if others and k > 1 else 0
+        pick = self.rng.sample(range(len(frames)), min(len(frames), self.n - n_neg))
+        out = [self.visor_frame(video, *frames[j]) for j in [pick[0]] + sorted(pick[1:])]
+        if n_neg:
+            nv, _, nf = self.visor[self.rng.choice(self.visor_by_person[self.rng.choice(others)])]
+            out.insert(1 + self.rng.randrange(len(out)), self.visor_frame(nv, self.rng.choice(nf)[0], None))
+        if out[0][1].sum() == 0:   # query mask vanished in the 448 letterbox (tiny object): draw again
+            return self.sample_visor()
         return out
 
 
@@ -266,7 +289,13 @@ def train(model, args, out, dev, log):
     opt = torch.optim.AdamW(groups, lr=args.lr, weight_decay=args.weight_decay)
     warm = min(args.warmup, max(1, args.iters // 10))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min((s + 1) / warm, max(0.0, (args.iters - s) / max(1, args.iters - warm))))
-    sampler = Sampler(vq_keys, visor, args.seq_len, random.Random(args.seed), et_keys)
+    mix = [float(x) for x in str(getattr(args, 'mix', '2,1,1')).split(',')]
+    if len(mix) != 3 or min(mix) < 0:
+        raise SystemExit(f'--mix needs three non-negative weights (VQ2D, EgoTracks, VISOR), not {args.mix!r}')
+    sampler = Sampler(vq_keys, visor, args.seq_len, random.Random(args.seed), et_keys, mix)
+    if visor:
+        tot = sum(w for s, w in zip(('vq', 'et', 'visor'), mix) if s in sampler.sources)
+        log('Source mix: ' + ', '.join(f'{s} {w / tot:.0%}' for s, w in zip(sampler.sources, sampler.weights)))
     start = 1
     if resume is not None:
         load_weights(model, resume, log)

@@ -358,21 +358,27 @@ def visor_available():
 
 def load_visor_sequences(split='train', min_len=3):
     """Group VISOR sparse annotations into per-object sequences:
-    [(video_id, object_name, [(image_name, polygons), ...]), ...]."""
+    [(video_id, 'subsequence:object_name', [(image_name, polygons), ...]), ...].
+
+    VISOR names objects by class ('container', 'plate', 'vegetable'), and one name can cover several
+    physical objects over a whole video; mask ids are per mask, not per object. Within one
+    subsequence (a few frames of one action, about 2 s apart) a name refers to one object, which is
+    how VISOR's own video object segmentation benchmark keeps identity, so sequences are built per
+    subsequence and object name."""
     root = VISOR / 'GroundTruth-SparseAnnotations' / 'annotations' / split
     seqs = []
     for jf in sorted(root.glob('*.json')):
         data = json.loads(jf.read_text())
         per_obj = {}
         for entry in data.get('video_annotations', []):
-            name = entry['image']['name']
+            img = entry['image']
             for a in entry.get('annotations', []):
                 if a.get('name', '').startswith(('left hand', 'right hand')):
                     continue                                  # queries are objects, not hands
-                per_obj.setdefault(a['name'], []).append((name, a['segments']))
-        for obj, frames in per_obj.items():
+                per_obj.setdefault((img.get('subsequence', ''), a['name']), []).append((img['name'], a['segments']))
+        for (sub, obj), frames in sorted(per_obj.items()):
             if len(frames) >= min_len:
-                seqs.append((jf.stem, obj, sorted(frames)))
+                seqs.append((jf.stem, f'{sub}:{obj}', sorted(frames)))
     return seqs
 
 
@@ -383,13 +389,14 @@ class VisorFrames:
         self.root = VISOR / 'GroundTruth-SparseAnnotations' / 'rgb_frames' / split
         self.zips = {}
 
-    def image(self, video_id, name):
+    def image(self, video_id, name, half=False):
+        """RGB frame; half=True decodes at half resolution (faster, and still above the 448 input)."""
         import cv2
         z = self.zips.get(video_id)
         if z is None:
             z = self.zips[video_id] = zipfile.ZipFile(self.root / video_id.split('_')[0] / f'{video_id}.zip')
         buf = np.frombuffer(z.read(name), np.uint8)
-        return cv2.imdecode(buf, cv2.IMREAD_COLOR)[:, :, ::-1].copy()
+        return cv2.imdecode(buf, cv2.IMREAD_REDUCED_COLOR_2 if half else cv2.IMREAD_COLOR)[:, :, ::-1].copy()
 
 
 def polygons_to_mask(polys, shape):
