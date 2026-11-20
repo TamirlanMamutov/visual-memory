@@ -75,6 +75,33 @@ python run_eagle.py --stage all
 
 VISOR must be unzipped at `..\EPIC-KITCHENS-VISOR\GroundTruth-SparseAnnotations`.
 
+## 6. Ensemble of runs 2, 3, 5 + visual-crop constraint + SAM 2: `ens3-mask0`
+
+Run on Nov 19 with no retraining, from the per-frame traces that runs 2, 3 and 5 saved during evaluation.
+
+```bash
+python eagle_ensemble.py output\eagle-20261111-221053 output\eagle-20261114-002928 output\eagle-20261114-204835 --out output\ens3-mask0
+python eagle_sam2.py output\ens3-mask0 --clips 0: --model facebook/sam2.1-hiera-small --margin 30 --tag small-m30
+```
+
+- **Trace ensembling:** the three runs' per-frame confidences are averaged with equal weights, and each frame keeps the box of the most confident run. The paper's default post-processing rule then builds the track. Averaging removes many wrong time windows: with every track given the same score, the ensemble still beats run 2 by 0.077 stAP25.
+- **Visual-crop constraint:** the crop is a sighting of the object, and the response track is the *last* occurrence before the query. When the crop's frame comes before the query frame, frames up to the crop frame get confidence 0. This uses only the query input. It applies to 42% of val queries.
+- **SAM 2 `extend`:** the same refinement as run 4, with a margin of 30 frames instead of 10.
+
+No setting was tuned on val. Equal weights, crop margin 0, the paper's post-processing and SAM 2 margin 30 were all fixed in advance. A sweep on clips 351+ found no setting that clearly beat them on clips 0–350.
+
+Full val ablation:
+
+| Step | tAP25 | stAP25 | tAP | stAP | Succ | Rec |
+|---|---|---|---|---|---|---|
+| Run 2 alone | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 |
+| Run 2 + crop constraint | 0.477 | 0.390 | 0.291 | 0.181 | 64.51 | 46.52 |
+| Ensemble of 2 + 3 + 5 | 0.540 | 0.464 | 0.332 | 0.222 | 70.46 | 49.21 |
+| Ensemble + crop constraint | 0.553 | 0.473 | 0.344 | 0.229 | 70.85 | 49.39 |
+| + SAM 2 `extend`, margin 30 | 0.598 | 0.531 | 0.448 | 0.301 | 71.70 | 62.07 |
+
+Caveats: the ensemble runs three EAGLE models plus SAM 2, about 3× the inference cost of one EAGLE model. These are val numbers, and the test set has not been scored.
+
 ## Results on Ego4D VQ2D val
 
 | Run | tAP25 | stAP25 | tAP | stAP | Succ | Rec |
@@ -88,6 +115,8 @@ VISOR must be unzipped at `..\EPIC-KITCHENS-VISOR\GroundTruth-SparseAnnotations`
 | 4. 2 + SAM 2 `extend`, clips 0–350 | 0.533 | 0.448 | 0.377 | 0.250 | 65.46 | 55.52 |
 | 5. VISOR | 0.450 | 0.351 | 0.260 | 0.161 | 63.18 | 44.14 |
 | 5 on clips 0–350 only | 0.456 | 0.364 | 0.266 | 0.173 | 62.69 | 44.69 |
+| 6. Ensemble 2+3+5 + crop constraint | 0.553 | 0.473 | 0.344 | 0.229 | 70.85 | 49.39 |
+| **6. + SAM 2 `extend`, margin 30** | **0.598** | **0.531** | **0.448** | **0.301** | **71.70** | **62.07** |
 
 All full-val rows score 4,501 queries; the clips 0–350 rows score 1,348.
 
