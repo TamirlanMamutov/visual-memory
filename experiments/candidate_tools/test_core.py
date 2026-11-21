@@ -5,7 +5,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import copy
 import unittest
 from experiments.box_refinement.refinement import refine_boxes
-from experiments.additional_hints.hints import timing_rank
+from experiments.additional_hints.hints import timing_rank,native_gated_choice
+from experiments.additional_hints.clarification import request_policy
 from experiments.candidate_tools.candidate_common import validate_query
 from experiments.candidate_tools.adapt_eagle import choose_records, export_pool
 
@@ -19,6 +20,23 @@ def query():
                 baseline_id='base',candidates=[candidate('base',0,.6),candidate('other',20,.7,2)])
 
 class CoreTests(unittest.TestCase):
+    def test_declined_hint_keeps_native_without_a_timestamp(self):
+        q=query();selected,detail=native_gated_choice(q,dict(declined=True))
+        self.assertEqual(selected,'base');self.assertFalse(detail['changed'])
+
+    def test_conservative_hint_gate_accepts_compatible_appearance(self):
+        q=query();q['candidates'][1]['image_score']=.59
+        selected,detail=native_gated_choice(q,dict(kind='time',seconds=4.4,sigma_seconds=.2))
+        self.assertEqual(selected,'other');self.assertTrue(detail['changed'])
+
+    def test_clarification_policy_needs_no_labels(self):
+        a=query();a['candidates'][1]['image_score']=.62
+        b=copy.deepcopy(a);b.update(key='second',source='second_source')
+        b['candidates'][1]['bboxes']=copy.deepcopy(b['candidates'][0]['bboxes'])
+        b['candidates'][1]['samples']=copy.deepcopy(b['candidates'][0]['samples'])
+        policy=request_policy(dict(queries=[a,b]),.5)
+        self.assertEqual(policy['requested_keys'],['synthetic_query']);self.assertEqual(policy['eligible'],1)
+
     def test_timing_clue_uses_seconds_not_frame_numbers(self):
         q=query();before=copy.deepcopy(q)
         self.assertEqual(timing_rank(q,dict(kind='time',seconds=.4,sigma_seconds=.1))[0],'base')
