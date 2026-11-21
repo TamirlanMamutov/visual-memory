@@ -16,54 +16,49 @@ All runs use the defaults: 25,000 iterations, batch 4, sequence length 4, LR 2.5
 
 ## All runs at a glance
 
-One row per run or paper result, across the three tasks. Metrics differ by task, and so do the evaluation sets, so compare rows only within the same task and evaluation set. The sections further down give the commands and full metrics.
+One table for every run and paper result across the three tasks: Ego4D VQ2D, the multimodal localization prototype and EPIC-KITCHENS-100 retrieval. Each metric has its own column, and a dash means the metric doesn't apply or wasn't measured. Evaluation sets differ, so compare rows only when Task and Evaluated on match. The sections further down give the commands and details.
 
-**Code** is the commit the run used. When a run started before its code was committed, the commit that later recorded that code is in brackets. **Init** is where the weights came from. **Change** is what differs from the run it was built on.
+- **Code:** the commit the run used. When a run started before its code was committed, the commit that later recorded that code is in brackets.
+- **Init:** where the weights came from.
+- **Change:** what differs from the run it was built on.
+- **Metrics:** VQ2D metrics come from the official evaluator. Frame mIoU is the mean box IoU on frames that contain the object, and presence F1 scores whether each frame is predicted to contain it. Retrieval mAP and nDCG are in percent; V→T is video→text, T→V is text→video. "Dual" is the text–video encoder alone, and "+ rerank" adds TempRet's reranking stage.
+- **Multimodal localization prototype:** from the teammate's branch `tamirlan/multimodal-localization-model`. It is scored on 27 VQ2D val queries from 8 videos, with sparsely sampled frames, so its frame mIoU and F1 compare only roughly with ours on 4,501 queries.
+- **Old mAP:** these rows were scored before the official EK-100 mAP fix (`52f857e`), so their mAP is understated; nDCG is unaffected.
 
-### Visual query localization: Ego4D VQ2D
-Metrics are tAP25 / stAP25 / Succ / Rec (official VQ2D evaluator), plus our frame-level mIoU and presence F1 where they were saved.
-
-| Run | Code | Change | Init | Evaluated on | tAP25 / stAP25 / Succ / Rec | Frame mIoU / F1 |
-|---|---|---|---|---|---|---|
-| EAGLE paper | — | — | DINOv2 fine-tuned on EgoTracks, then frozen; segmentation trained on Ego4D, EgoTracks and VISOR | val | 0.47 / 0.42 / 61.29 / 52.09 | — |
-| EAGLE paper | — | — | as above | test server | 0.46 / 0.40 / 62.70 / 53.51 | — |
-| REN paper | — | — | frozen DINOv2 ViT-L/14 with REN region tokens and SAM 2; no VQ2D training | test server | 0.52 / 0.40 / 61.2 / 49.3 | — |
-| RELOCATE (from EAGLE's Table 1) | — | — | SAM-based region tokens; no VQ2D training | val | 0.41 / 0.33 / 58.03 / 50.50 | — |
-| 1. Baseline `eagle-20261110-084401` | train `2125dd1`, eval `1f0a52c` | first full run: VQ2D only, after the mask-decoder collapse fix; evaluated with per-frame BatchNorm | DINOv2-base pretrained and frozen; EAGLE memory and decoder random; SAM ViT-B only makes training pseudo-masks | val, 4,501 queries | 0.406 / 0.319 / 60.74 / 40.35 | — |
-| 2. EgoTracks `eagle-20261111-221053` | `7d14dbd` | 1 + EgoTracks long-term tracks in training | as 1 | val, 4,501 queries | 0.472 / 0.386 / 64.51 / 46.35 | 0.351 / 0.490 |
-| 3. Fine-tuned 4 blocks `eagle-20261114-002928` | `120cd72` | 2 + training the last 4 DINOv2 blocks (LR 2.5e-5) | as 1, with the last 4 DINOv2 blocks trainable | val, 4,501 queries | 0.445 / 0.378 / 62.89 / 43.58 | 0.345 / 0.511 |
-| 4. Run 2 + SAM 2, clips 0–350 | `8ed086d` | 2 + SAM 2 `extend` box refinement, margin 10; no training | run 2's weights + SAM 2.1 Hiera Small | val clips 0–350, 1,348 queries (run 2 alone: 0.486 / 0.400 / 64.63 / 47.40) | 0.533 / 0.448 / 65.46 / 55.52 | — |
-| 5. VISOR `eagle-20261114-204835` | `aee6859` | 2 + VISOR (mix VQ2D 50%, EgoTracks 25%, VISOR 25%) | as 1 | val, 4,501 queries | 0.450 / 0.351 / 63.18 / 44.14 | 0.343 / 0.476 |
-| **6. Ensemble `ens3-mask0` + SAM 2** | `422f0c0` | ensemble of 2, 3 and 5, visual-crop constraint, SAM 2 `extend` with margin 30; no training | runs 2, 3, 5 + SAM 2.1 Hiera Small | val, 4,501 queries | **0.598 / 0.531 / 71.70 / 62.07** | — |
-
-### Multimodal localization prototype (teammate's branch `tamirlan/multimodal-localization-model`)
-Metrics are presence F1 / mean box IoU on frames that contain the object. They are measured on 27 Ego4D VQ2D val queries from 8 videos, with sparsely sampled frames. These are not official VQ2D metrics. Our frame mIoU / F1 above are similar in spirit but use all 4,501 queries, so they are only a rough reference.
-
-| Run | Code | Change | Init | Evaluated on | Presence F1 / box IoU |
-|---|---|---|---|---|---|
-| Temporal prototype | `9c47669` | first real Ego4D run: 117 training queries, 10 epochs, checkpoint chosen by val loss | frozen DINOv2 ViT-S/14 at 224 px (official weights); heads random | 27 val queries | 0.043 / 0.006 |
-| Spatial matcher, Ego4D only | `dfce151` | per-frame spatial matcher; checkpoint chosen by IoU | as above | 27 val queries | 0.059 / 0.089 |
-| Spatial matcher + EPIC (joint) | `dfce151` | + EPIC noun classification as an auxiliary task (31 segments, weight 0.1) | as above | 27 val queries | 0.059 / 0.089 |
-| Assigned boxes, 20 epochs | `7f0eb48` | longer training with assigned box targets; 96/21 fitting/development split | as above | 27 val queries | 0.066 / 0.081 |
-| Box prior, 43 epochs | `7f0eb48` | + a box-size prior from the fitting set | as above | 27 val queries | 0.082 / 0.073 |
-
-### Text–video retrieval: EPIC-KITCHENS-100 Multi-Instance Retrieval
-Metrics are mAP avg / nDCG avg, in percent. "Dual" is the text–video encoder alone; "rerank" adds TempRet's reranking stage.
-
-| Run | Code | Change | Init | Evaluated on | mAP / nDCG |
-|---|---|---|---|---|---|
-| TempRet paper | — | — | — | test server | 67.97 / 82.92 |
-| JPoSE, pretrained (`epic-baseline-*`, 6 identical runs) | `1d0fd38` (first two runs before it) | evaluation only | downloaded JPoSE checkpoint | full val, JPoSE's own scorer | 73.4 / 69.0 |
-| JPoSE, 1 epoch `epic-baseline-20261107-000802` | before `1d0fd38` | trained for 1 epoch | random | full val, JPoSE's own scorer | 47.8 / 53.6 |
-| TempRet `005058` | before `6a873d0` | first run: ViT-B/16 frozen, 2 epochs, 320 training clips | OpenAI CLIP ViT-B/16, frozen; temporal module and reranker random | 160 test clips; old mAP definition | dual 13.4 / 31.8 |
-| TempRet `020438` | before `6a873d0` | ViT-L/14 frozen, 10 epochs, 4,881 training clips | OpenAI CLIP ViT-L/14, frozen; temporal module and reranker random | 1,256 test clips; old mAP | dual 15.6 / 33.3 |
-| TempRet `100605` | before `6a873d0` | reranker retrained only | `020438` checkpoint | 1,256 test clips; old mAP | rerank 16.3 / 33.9 |
-| TempRet `130804` | `6a873d0` (+ `52f857e`) | official EK-100 mAP; no encoder training | OpenAI CLIP ViT-L/14 with an untrained temporal module | 1,256 test clips | dual 22.5 / 28.7 |
-| **TempRet `130858`** | `6a873d0` (+ `52f857e`) | `100605` re-scored with the official mAP | `100605` checkpoint | 1,256 test clips | dual 30.1 / 33.3, **rerank 31.0 / 33.9** |
-| TempRet `131038` | `6a873d0` (+ `52f857e`) | 10 epochs on 1,220 training clips; no reranker | OpenAI CLIP ViT-L/14, frozen | 1,256 test clips | dual 28.1 / 32.6 |
-| TempRet `131140` | `6a873d0` (+ `52f857e`) | 10 epochs on 2,440 training clips; no reranker | as above | 1,256 test clips | dual 29.2 / 33.1 |
-| TempRet `131307` | `6a873d0` (+ `52f857e`) | 10 epochs on 4,881 clips without the temporal module; no reranker | as above | 1,256 test clips | dual 27.0 / 32.4 |
-| TempRet `162636` (smoke test) | `2d5ddc3` (+ `11744e1`) | full fine-tuning of CLIP, 1 epoch, 8-bit AdamW, 640 training clips | OpenAI CLIP ViT-L/14, all layers trained | 128 test clips | dual 36.6 / 39.2, rerank 36.4 / 38.3 |
+| Task | Run | Code | Change | Init | Evaluated on | tAP25 | stAP25 | tAP | stAP | Succ | Rec | Frame mIoU | Presence F1 | mAP V→T | mAP T→V | mAP avg | nDCG V→T | nDCG T→V | nDCG avg |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| VQ2D | EAGLE paper | — | — | DINOv2 fine-tuned on EgoTracks, then frozen; segmentation trained on Ego4D, EgoTracks and VISOR | val | 0.47 | 0.42 | — | — | 61.29 | 52.09 | — | — | — | — | — | — | — | — |
+| VQ2D | EAGLE paper | — | — | as above | test server | 0.46 | 0.40 | — | — | 62.70 | 53.51 | — | — | — | — | — | — | — | — |
+| VQ2D | REN paper | — | — | frozen DINOv2 ViT-L/14 with REN region tokens and SAM 2; no VQ2D training | test server | 0.52 | 0.40 | — | — | 61.2 | 49.3 | — | — | — | — | — | — | — | — |
+| VQ2D | RELOCATE (from EAGLE's Table 1) | — | — | SAM-based region tokens; no VQ2D training | val | 0.41 | 0.33 | — | — | 58.03 | 50.50 | — | — | — | — | — | — | — | — |
+| VQ2D | 1. Baseline `eagle-20261110-084401` | train `2125dd1`, eval `1f0a52c` | first full run: VQ2D only, after the mask-decoder collapse fix; per-frame BatchNorm at evaluation | DINOv2-base pretrained and frozen; EAGLE memory and decoder random; SAM ViT-B only makes training pseudo-masks | val, 4,501 queries | 0.406 | 0.319 | 0.232 | 0.142 | 60.74 | 40.35 | — | — | — | — | — | — | — | — |
+| VQ2D | 2. EgoTracks `eagle-20261111-221053` | `7d14dbd` | 1 + EgoTracks long-term tracks in training | as 1 | val, 4,501 queries | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 | 0.351 | 0.490 | — | — | — | — | — | — |
+| VQ2D | 2. EgoTracks, clips 0–350 only | `7d14dbd` | run 2 scored on the subset used by run 4 | as 1 | val clips 0–350, 1,348 queries | 0.486 | 0.400 | 0.300 | 0.189 | 64.63 | 47.40 | — | — | — | — | — | — | — | — |
+| VQ2D | 3. Fine-tuned 4 blocks `eagle-20261114-002928` | `120cd72` | 2 + training the last 4 DINOv2 blocks (LR 2.5e-5) | as 1, with the last 4 blocks trainable | val, 4,501 queries | 0.445 | 0.378 | 0.265 | 0.180 | 62.89 | 43.58 | 0.345 | 0.511 | — | — | — | — | — | — |
+| VQ2D | 4. Run 2 + SAM 2 | `8ed086d` | 2 + SAM 2 `extend` box refinement, margin 10; no training | run 2's weights + SAM 2.1 Hiera Small | val clips 0–350, 1,348 queries | 0.533 | 0.448 | 0.377 | 0.250 | 65.46 | 55.52 | — | — | — | — | — | — | — | — |
+| VQ2D | 5. VISOR `eagle-20261114-204835` | `aee6859` | 2 + VISOR (mix: VQ2D 50%, EgoTracks 25%, VISOR 25%) | as 1 | val, 4,501 queries | 0.450 | 0.351 | 0.260 | 0.161 | 63.18 | 44.14 | 0.343 | 0.476 | — | — | — | — | — | — |
+| VQ2D | **6. Ensemble `ens3-mask0` + SAM 2** | `422f0c0` | ensemble of 2, 3 and 5, visual-crop constraint, SAM 2 `extend` with margin 30; no training | runs 2, 3 and 5 + SAM 2.1 Hiera Small | val, 4,501 queries | **0.598** | **0.531** | **0.448** | **0.301** | **71.70** | **62.07** | — | — | — | — | — | — | — | — |
+| Multimodal localization | Temporal prototype | `9c47669` | first real Ego4D run: 117 training queries, 10 epochs, checkpoint chosen by val loss | frozen DINOv2 ViT-S/14 at 224 px (official weights); heads random | VQ2D val, 27 queries | — | — | — | — | — | — | 0.006 | 0.043 | — | — | — | — | — | — |
+| Multimodal localization | Spatial matcher, Ego4D only | `dfce151` | per-frame spatial matcher; checkpoint chosen by IoU | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.089 | 0.059 | — | — | — | — | — | — |
+| Multimodal localization | Spatial matcher + EPIC (joint) | `dfce151` | + EPIC noun classification as an auxiliary task (31 segments, weight 0.1) | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.089 | 0.059 | — | — | — | — | — | — |
+| Multimodal localization | Assigned boxes, 20 epochs | `7f0eb48` | longer training with assigned box targets; 96/21 fitting/development split | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.081 | 0.066 | — | — | — | — | — | — |
+| Multimodal localization | Box prior, 43 epochs | `7f0eb48` | + a box-size prior from the fitting set | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.073 | 0.082 | — | — | — | — | — | — |
+| Retrieval | TempRet paper | — | — | — | EK-100 test server | — | — | — | — | — | — | — | — | — | — | 67.97 | — | — | 82.92 |
+| Retrieval | JPoSE, pretrained (`epic-baseline-*`, 6 identical runs) | `1d0fd38` (first two runs before it) | evaluation only | downloaded JPoSE checkpoint | EPIC-100 full val, JPoSE's own scorer | — | — | — | — | — | — | — | — | 75.7 | 71.2 | 73.4 | 70.7 | 67.4 | 69.0 |
+| Retrieval | JPoSE, 1 epoch `epic-baseline-20261107-000802` | before `1d0fd38` | trained for 1 epoch | random | EPIC-100 full val, JPoSE's own scorer | — | — | — | — | — | — | — | — | 52.4 | 43.3 | 47.8 | 55.5 | 51.7 | 53.6 |
+| Retrieval | TempRet `005058`, dual | before `6a873d0` | first run: ViT-B/16 frozen, 2 epochs, 320 training clips | OpenAI CLIP ViT-B/16, frozen; temporal module and reranker random | local subset, 160 test clips; old mAP | — | — | — | — | — | — | — | — | 12.3 | 14.5 | 13.4 | 32.7 | 30.9 | 31.8 |
+| Retrieval | TempRet `005058`, + rerank | before `6a873d0` | as above | as above | local subset, 160 test clips; old mAP | — | — | — | — | — | — | — | — | 6.2 | 5.6 | 5.9 | 26.7 | 20.7 | 23.7 |
+| Retrieval | TempRet `020438`, dual | before `6a873d0` | ViT-L/14 frozen, 10 epochs, 4,881 training clips | OpenAI CLIP ViT-L/14, frozen; temporal module and reranker random | local subset, 1,256 test clips; old mAP | — | — | — | — | — | — | — | — | 15.5 | 15.6 | 15.6 | 33.3 | 33.2 | 33.3 |
+| Retrieval | TempRet `020438`, + rerank | before `6a873d0` | as above | as above | local subset, 1,256 test clips; old mAP | — | — | — | — | — | — | — | — | 5.2 | 5.0 | 5.1 | 22.8 | 23.2 | 23.0 |
+| Retrieval | TempRet `100605`, + rerank | before `6a873d0` | reranker retrained only | `020438` checkpoint | local subset, 1,256 test clips; old mAP | — | — | — | — | — | — | — | — | 16.1 | 16.6 | 16.3 | 33.9 | 33.9 | 33.9 |
+| Retrieval | TempRet `130804`, dual | `6a873d0` (+ `52f857e`) | official EK-100 mAP; no encoder training | OpenAI CLIP ViT-L/14 with an untrained temporal module | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 22.9 | 22.2 | 22.5 | 28.8 | 28.5 | 28.7 |
+| Retrieval | TempRet `130858`, dual | `6a873d0` (+ `52f857e`) | `100605` re-scored with the official mAP | `100605` checkpoint | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 30.4 | 29.8 | 30.1 | 33.3 | 33.2 | 33.3 |
+| Retrieval | **TempRet `130858`, + rerank** | `6a873d0` (+ `52f857e`) | as above | as above | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | **31.1** | **30.9** | **31.0** | **33.9** | **33.9** | **33.9** |
+| Retrieval | TempRet `131038`, dual | `6a873d0` (+ `52f857e`) | 10 epochs on 1,220 training clips; no reranker | OpenAI CLIP ViT-L/14, frozen | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 29.4 | 26.7 | 28.1 | 33.1 | 32.2 | 32.6 |
+| Retrieval | TempRet `131140`, dual | `6a873d0` (+ `52f857e`) | 10 epochs on 2,440 training clips; no reranker | as above | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 30.2 | 28.2 | 29.2 | 33.3 | 32.9 | 33.1 |
+| Retrieval | TempRet `131307`, dual | `6a873d0` (+ `52f857e`) | 10 epochs on 4,881 clips without the temporal module; no reranker | as above | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 27.7 | 26.3 | 27.0 | 32.9 | 31.9 | 32.4 |
+| Retrieval | TempRet `162636` (smoke test), dual | `2d5ddc3` (+ `11744e1`) | full fine-tuning of CLIP, 1 epoch, 8-bit AdamW, 640 training clips | OpenAI CLIP ViT-L/14, all layers trained | local subset, 128 test clips | — | — | — | — | — | — | — | — | 34.4 | 38.9 | 36.6 | 40.4 | 37.9 | 39.2 |
+| Retrieval | TempRet `162636` (smoke test), + rerank | `2d5ddc3` (+ `11744e1`) | as above | as above | local subset, 128 test clips | — | — | — | — | — | — | — | — | 33.9 | 38.9 | 36.4 | 39.1 | 37.5 | 38.3 |
 
 ## 1. Baseline (VQ2D only): `eagle-20261110-084401`
 
