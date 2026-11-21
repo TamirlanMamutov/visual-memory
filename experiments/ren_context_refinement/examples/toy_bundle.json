@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "cohort": "COMPLETELY SYNTHETIC FORMAT DEMO",
+  "queries": [
+    {
+      "key": "toy_query_a",
+      "source": "toy_source_a",
+      "object": "synthetic square A",
+      "query_frame": 50,
+      "fps": 5,
+      "score": 0.9,
+      "baseline_id": "base",
+      "candidates": [
+        {
+          "id": "base",
+          "bboxes": [
+            [
+              0,
+              0,
+              0,
+              10,
+              10
+            ],
+            [
+              1,
+              0,
+              0,
+              10,
+              10
+            ],
+            [
+              2,
+              0,
+              0,
+              10,
+              10
+            ],
+            [
+              3,
+              0,
+              0,
+              10,
+              10
+            ],
+            [
+              4,
+              0,
+              0,
+              10,
+              10
+            ]
+          ],
+          "image_score": 0.7,
+          "name_score": 0.7,
+          "description_score": 0.7,
+          "samples": [
+            {
+              "frame": 0,
+              "image_score": 0.7,
+              "name_score": 0.7,
+              "description_score": 0.7
+            },
+            {
+              "frame": 2,
+              "image_score": 0.7,
+              "name_score": 0.7,
+              "description_score": 0.7
+            },
+            {
+              "frame": 4,
+              "image_score": 0.7,
+              "name_score": 0.7,
+              "description_score": 0.7
+            }
+          ]
+        },
+        {
+          "id": "later",
+          "bboxes": [
+            [
+              20,
+              20,
+              0,
+              30,
+              10
+            ],
+            [
+              21,
+              20,
+              0,
+              30,
+              10
+            ],
+            [
+              22,
+              20,
+              0,
+              30,
+              10
+            ],
+            [
+              23,
+              20,
+              0,
+              30,
+              10
+            ],
+            [
+              24,
+              20,
+              0,
+              30,
+              10
+            ]
+          ],
+          "image_score": 0.65,
+          "name_score": 0.65,
+          "description_score": 0.65,
+          "samples": [
+            {
+              "frame": 20,
+              "image_score": 0.65,
+              "name_score": 0.65,
+              "description_score": 0.65
+            },
+            {
+              "frame": 22,
+              "image_score": 0.65,
+              "name_score": 0.65,
+              "description_score": 0.65
+            },
+            {
+              "frame": 24,
+              "image_score": 0.65,
+              "name_score": 0.65,
+              "description_score": 0.65
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "toy_query_b",
+      "source": "toy_source_b",
+      "object": "synthetic square B",
+      "query_frame": 50,
+      "fps": 5,
+      "score": 0.8,
+      "baseline_id": "base",
+      "candidates": [
+        {
+          "id": "base",
+          "bboxes": [
+            [
+              10,
+              40,
+              0,
+              50,
+              10
+            ],
+            [
+              11,
+              40,
+              0,
+              50,
+              10
+            ],
+            [
+              12,
+              40,
+              0,
+              50,
+              10
+            ],
+            [
+              13,
+              40,
+              0,
+              50,
+              10
+            ],
+            [
+              14,
+              40,
+              0,
+              50,
+              10
+            ]
+          ],
+          "image_score": 0.6,
+          "name_score": 0.6,
+          "description_score": 0.6,
+          "samples": [
+            {
+              "frame": 10,
+              "image_score": 0.6,
+              "name_score": 0.6,
+              "description_score": 0.6
+            },
+            {
+              "frame": 12,
+              "image_score": 0.6,
+              "name_score": 0.6,
+              "description_score": 0.6
+            },
+            {
+              "frame": 14,
+              "image_score": 0.6,
+              "name_score": 0.6,
+              "description_score": 0.6
+            }
+          ]
+        },
+        {
+          "id": "better_box",
+          "bboxes": [
+            [
+              10,
+              45,
+              0,
+              55,
+              10
+            ],
+            [
+              11,
+              45,
+              0,
+              55,
+              10
+            ],
+            [
+              12,
+              45,
+              0,
+              55,
+              10
+            ],
+            [
+              13,
+              45,
+              0,
+              55,
+              10
+            ],
+            [
+              14,
+              45,
+              0,
+              55,
+              10
+            ]
+          ],
+          "image_score": 0.8,
+          "name_score": 0.8,
+          "description_score": 0.8,
+          "samples": [
+            {
+              "frame": 10,
+              "image_score": 0.8,
+              "name_score": 0.8,
+              "description_score": 0.8
+            },
+            {
+              "frame": 12,
+              "image_score": 0.8,
+              "name_score": 0.8,
+              "description_score": 0.8
+            },
+            {
+              "frame": 14,
+              "image_score": 0.8,
+              "name_score": 0.8,
+              "description_score": 0.8
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "provenance": "SYNTHETIC FORMAT EXAMPLE ONLY — replace keys and values using your actual query inputs",
+  "queries": [
+    {"key": "replace_with_query_key_1", "kind": "time", "seconds": 20.0, "sigma_seconds": 5.0},
+    {"key": "replace_with_query_key_2", "kind": "third", "value": "late"}
+  ]
+}
