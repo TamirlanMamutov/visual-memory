@@ -107,7 +107,7 @@ Caveats: the ensemble runs three EAGLE models plus SAM 2, about 3× the inferenc
 | Run | tAP25 | stAP25 | tAP | stAP | Succ | Rec |
 |---|---|---|---|---|---|---|
 | EAGLE paper (val) | 0.47 | 0.42 | — | — | 61.29 | 52.09 |
-| REN paper (likely test) | 0.52 | 0.40 | — | — | 61.2 | 49.3 |
+| REN paper (test) | 0.52 | 0.40 | — | — | 61.2 | 49.3 |
 | 1. Baseline | 0.406 | 0.319 | 0.232 | 0.142 | 60.74 | 40.35 |
 | 2. EgoTracks | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 |
 | 3. Fine-tuned 4 blocks | 0.445 | 0.378 | 0.265 | 0.180 | 62.89 | 43.58 |
@@ -121,3 +121,47 @@ Caveats: the ensemble runs three EAGLE models plus SAM 2, about 3× the inferenc
 All full-val rows score 4,501 queries; the clips 0–350 rows score 1,348.
 
 Adding VISOR (run 5) lowered every metric compared with run 2, on both the full val set and clips 0–350. A likely cause is that VISOR's 25% share cut EgoTracks from about 50% of the training mix to 25%. Training metrics didn't predict this: run 5 was ahead of run 2 throughout training.
+
+## Text–video retrieval: EPIC-KITCHENS-100 Multi-Instance Retrieval
+
+This section covers a different task, with different metrics: mAP and nDCG, in each direction (video→text, text→video) and averaged. Higher is better. The rows below are on three different test sets, so only rows in the same group compare directly.
+
+### Papers, on the EK-100 test server
+
+| Method | mAP avg | nDCG avg |
+|---|---|---|
+| TempRet paper (arXiv 2605.24470) | 67.97 | 82.92 |
+
+### JPoSE baseline, on the full EPIC-100 validation set
+Scored by JPoSE's own evaluation code, which may define mAP differently from the official EK-100 code.
+
+| Run | Started | mAP V→T / T→V / avg | nDCG V→T / T→V / avg |
+|---|---|---|---|
+| Downloaded pretrained JPoSE (`epic-baseline-*`, 6 identical runs) | Nov 7–8 | 75.7 / 71.2 / **73.4** | 70.7 / 67.4 / **69.0** |
+| JPoSE trained from scratch, 1 epoch (`epic-baseline-20261107-000802`) | Nov 7 00:08 | 52.4 / 43.3 / 47.8 | 55.5 / 51.7 / 53.6 |
+
+The pretrained result matches the JPoSE README. The one-epoch model started from random weights, so it is only a sanity check.
+
+### TempRet re-implementation, on a local subset
+These runs use 4,881 training clips, and 1,256 test clips with 1,351 sentences; the full benchmark has 67,217 training and 9,668 test clips. "Dual" is the text–video encoder alone; "+ rerank" adds TempRet's reranking stage. All runs use 8 frames per clip and the OpenAI CLIP weights.
+
+The Code column gives the latest commit before the run started. Several runs used changes that were committed only later; those commits are in brackets.
+
+| Run | Started (Nov 9) | Code | Setup | Dual mAP V→T / T→V / avg | Dual nDCG avg | + rerank mAP avg | + rerank nDCG avg |
+|---|---|---|---|---|---|---|---|
+| `tempret-20261109-130858` | 13:08 | 6a873d0 (+ mAP fix, `52f857e`) | ViT-L/14 frozen, 10 epochs; the `100605` checkpoint re-scored | 30.4 / 29.8 / **30.1** | 33.3 | **31.0** | **33.9** |
+| `tempret-20261109-131140` | 13:11 | 6a873d0 (+ `52f857e`) | ViT-L/14 frozen, 10 epochs, 2,440 training clips | 30.2 / 28.2 / 29.2 | 33.1 | — | — |
+| `tempret-20261109-131038` | 13:10 | 6a873d0 (+ `52f857e`) | ViT-L/14 frozen, 10 epochs | 29.4 / 26.7 / 28.1 | 32.6 | — | — |
+| `tempret-20261109-131307` | 13:13 | 6a873d0 (+ `52f857e`) | ViT-L/14 frozen, 10 epochs | 27.7 / 26.3 / 27.0 | 32.4 | — | — |
+| `tempret-20261109-130804` | 13:08 | 6a873d0 (+ `52f857e`) | ViT-L/14 frozen, no training | 22.9 / 22.2 / 22.5 | 28.7 | — | — |
+| `tempret-20261109-162636` (smoke test) | 16:26 | 2d5ddc3 (+ `11744e1`) | full fine-tuning, 1 epoch, only 640 training and 128 test clips | 34.4 / 38.9 / 36.6 | 39.2 | 36.4 | 38.3 |
+
+Runs from before the mAP fix: their mAP is understated, but nDCG is unaffected.
+
+| Run | Started (Nov 9) | Code | Setup | Dual mAP / nDCG avg | + rerank mAP / nDCG avg |
+|---|---|---|---|---|---|
+| `tempret-20261109-005058` | 00:50 | before 6a873d0, uncommitted | ViT-B/16 frozen, 2 epochs | 13.4 / 31.8 | 5.9 / 23.7 |
+| `tempret-20261109-020438` | 02:04 | before 6a873d0, uncommitted | ViT-L/14 frozen, 10 epochs | 15.6 / 33.3 | 5.1 / 23.0 |
+| `tempret-20261109-100605` | 10:06 | before 6a873d0, uncommitted | the `020438` checkpoint, with the reranker retrained | 15.6 / 33.3 | 16.3 / 33.9 |
+
+The best fair TempRet result is `130858`: 31.0 mAP and 33.9 nDCG, on the local subset. That is far below the paper's 67.97 and 82.92, which were scored on the test server, so the two aren't directly comparable. The `162636` smoke test is too small to mean anything. There are no full-benchmark TempRet runs yet.
