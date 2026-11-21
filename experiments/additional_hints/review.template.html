@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Timing clues with uncertainty</title>
+<style>
+body{font:16px/1.55 system-ui,sans-serif;margin:0;background:#f4f6f8;color:#172132}main{max-width:1050px;margin:25px auto;padding:0 18px}header,article{background:white;padding:24px;border:1px solid #d9e0e8;border-radius:12px;margin-bottom:20px}h1{font-size:28px}h2{font-size:22px}.media{display:flex;gap:22px;align-items:center;flex-wrap:wrap}img{width:155px;max-height:190px;object-fit:contain}video{width:min(640px,100%);background:#111}.fields{display:grid;gap:15px;margin-top:20px}label{display:block}select,textarea,button{font:inherit;padding:10px;border:1px solid #aab8c8;border-radius:6px}textarea{width:min(90%,700px)}button{background:#eaf1fe;color:#164476;cursor:pointer}.muted{font-size:14px;color:#566577}.toolbar{position:sticky;bottom:0;background:white;padding:15px;border:1px solid #ccd7e4;border-radius:10px}.missing{outline:3px solid #b76715}details{font-size:13px;color:#627080}
+</style></head><body><main>
+<header><h1>Timing clues: memory can be uncertain</h1>
+<p>Watch each short history with its reference object in mind, hide the video, and answer from memory. There are no model predictions, target boxes, or answer timestamps here.</p>
+<p><strong>A remembered sighting</strong> can be earlier than the actual last appearance. Choose <strong>estimated last sighting</strong> only when that is what you mean. Your confidence describes how certain you feel; it is not a guarantee.</p>
+<p>Choose “not sure” freely. Do not inspect benchmark annotations or earlier results while supplying clues. Record any replay.</p>
+<p class="muted">This is recall after viewing a short silent 5-FPS clip, not spontaneous daily-life memory. The follow-up uses source videos absent from the first human review, but remains an exploratory official-training development pilot. All entries stay local until export.</p></header>
+<section id="cards"></section>
+<div class="toolbar"><button id="export">Export clues with uncertainty</button> <span id="progress"></span><p id="message" role="status" class="muted"></p></div>
+</main><script>
+const reviewData=__REVIEW_MANIFEST__;
+const cards=document.getElementById('cards');
+function selections(card){return {time:card.querySelector('.time').value,scope:card.querySelector('.scope').value,confidence:card.querySelector('.confidence').value}}
+function complete(card){const s=selections(card);return s.time==='unknown'||Boolean(s.time&&s.scope&&s.confidence)}
+function update(){document.getElementById('progress').textContent=`${[...cards.children].filter(complete).length} / ${reviewData.queries.length} completed`}
+for(const q of reviewData.queries){
+ const card=document.createElement('article');card.dataset.key=q.key;
+ card.innerHTML='<h2></h2><div class="media"><div><p>Reference object</p><img></div><div><video controls preload="none"></video><p class="duration muted"></p><button class="hide" type="button">Hide / show video</button></div></div><div class="fields"><label>When was the sighting you remember?<br><select class="time"><option value="">Choose after viewing</option><option value="early">Early — first third</option><option value="middle">Middle — middle third</option><option value="late">Late — final third</option><option value="unknown">Not sure / cannot identify</option></select></label><label>What does your clue mean?<br><select class="scope"><option value="">Choose meaning</option><option value="remembered_sighting">A sighting I remember; there may be a later one</option><option value="latest_estimate">My estimate of the actual last sighting</option><option value="unknown">Not sure which</option></select></label><label>How confident are you in that clue?<br><select class="confidence"><option value="">Choose confidence</option><option value="low">Low — a guess</option><option value="medium">Medium — somewhat sure</option><option value="high">High — fairly sure, still fallible</option></select></label><label><input class="replayed" type="checkbox"> I replayed or revisited the clip</label><label>Optional: what do you remember?<br><textarea placeholder="For example: I saw it beside the kettle, but may have missed a later appearance."></textarea></label></div><details><summary>Query identifier</summary><span></span></details>';
+ card.querySelector('h2').textContent=`${q.ordinal}. ${q.object}`;
+ const image=card.querySelector('img');image.src=q.reference;image.alt=`Reference for ${q.object}`;
+ const video=card.querySelector('video');video.src=q.history_clip;video.dataset.completed='false';
+ video.addEventListener('ended',()=>{video.dataset.completed='true';video.hidden=true});
+ card.querySelector('.hide').addEventListener('click',()=>{if(!video.hidden)video.pause();else if(video.dataset.completed==='true')card.querySelector('.replayed').checked=true;video.hidden=!video.hidden});
+ card.querySelector('.duration').textContent=`Shown history: ${q.history_seconds.toFixed(1)} seconds. Interpret thirds within this shown history.`;
+ card.querySelector('details span').textContent=q.key;
+ card.querySelectorAll('select').forEach(s=>s.addEventListener('change',()=>{card.classList.remove('missing');const declined=card.querySelector('.time').value==='unknown';card.querySelector('.scope').disabled=declined;card.querySelector('.confidence').disabled=declined;update()}));
+ cards.appendChild(card);
+}
+update();
+document.getElementById('export').addEventListener('click',()=>{
+ const list=[...cards.children],missing=list.find(c=>!complete(c));
+ if(missing){missing.classList.add('missing');missing.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('message').textContent='Choose timing, meaning, and confidence, or choose “not sure”, for every query.';return}
+ const result={provenance:'human_short_history_recall_with_scope_and_confidence',protocol_id:reviewData.protocol_id,review_protocol:'Silent5FPSvideo plus query crop; recall after intended one viewing; replay and completion recorded; no GT answers or candidate predictions shown.',queries:list.map(c=>{const s=selections(c),declined=s.time==='unknown';return{key:c.dataset.key,kind:'third',value:declined?null:s.time,declined,scope:declined?'unknown':s.scope,confidence:declined?'unknown':s.confidence,replayed:c.querySelector('.replayed').checked,completed_video_once:c.querySelector('video').dataset.completed==='true',note:c.querySelector('textarea').value.trim()}})};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)+'\n'],{type:'application/json'}));
+ const link=document.createElement('a');link.href=url;link.download='human_timing_clues_v9.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ document.getElementById('message').textContent='Exported human_timing_clues_v9.json. Keep this original file for paired evaluation.';
+});
+</script></body></html>

@@ -136,3 +136,46 @@ python experiments/additional_hints/clarification.py --bundle output/pilot/bundl
 The 10%, 25%, and 50% budgets round down and are capped by eligible queries. Random
 controls request exactly the same number of clues. These simulation results are
 separate from real-human performance; see [results](RESULTS.md).
+
+## Fallible human clues and ranked alternatives
+
+The separate `uncertain.py` policy distinguishes a **remembered sighting** from an
+**estimate of the actual last sighting**. Earlier memories need not identify the
+benchmark's final response track. Do not silently interpret them as that answer.
+
+Add explicit scope and self-reported confidence to each supplied clue:
+
+```json
+{"key":"query_key","kind":"third","value":"middle",
+ "scope":"remembered_sighting","confidence":"medium"}
+```
+
+Supported scopes are `remembered_sighting`, `latest_estimate`, and `unknown`;
+confidence categories are `low`, `medium`, `high`, and `unknown`. Declines still
+use `{"key":"query_key","declined":true}`. Missing fields stay unknown; they
+are never inferred from whether an old response matched GT.
+
+```text
+python experiments/additional_hints/uncertain.py --bundle output/pilot/bundle.json --hints output/pilot/human_clues.json --out output/pilot/uncertain.json
+```
+
+The primary answer remains native for remembered/unknown-scope clues and for
+missing, low, or medium confidence. Only an explicit high-confidence last-sighting
+estimate can override it, after fixed appearance and mixed temporal-support gates.
+Remembered-sighting support is one-sided: it allows later episodes. All support is
+mixed with uniform history density, using fixed heuristic weights 0.2/0.5/0.8 for
+low/medium/high confidence (unknown uses 0.2). These are not calibrated reliability
+probabilities. High-confidence mistakes can still cause harmful changes.
+
+Outputs include the primary track, a full candidate ranking, a top-two shortlist,
+and a decision reason. Scores are ranking scores, not correctness probabilities.
+Score primary answers using the official evaluator; report shortlist coverage
+separately against a native-plus-image-alternative control with the same list size.
+Displaying a correct alternative is not evidence the system or user selected it.
+
+`review.template.html` is a static annotation template. Replace the
+`__REVIEW_MANIFEST__` placeholder with JSON containing `protocol_id` and a
+`queries` list of `{key,ordinal,object,reference,history_clip,history_seconds}`.
+Only query-reference crops and pre-query history belong in the review page; keep
+GT answers and candidate predictions out. Freeze the policy before collecting new
+clues. Preserve the original clue file, including declines and viewing metadata.

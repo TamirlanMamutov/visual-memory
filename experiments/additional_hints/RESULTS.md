@@ -68,4 +68,31 @@ all-query hints. Earlier-biased clues remain harmful (active-policy stAP25 0.428
 Six scenario/cohort combinations were checked against the full official evaluator.
 A fresh rerun exactly reproduced all summaries and intervals. The inference gate
 also matched 306 saved simulation choices. These are implementation checks, not
-additional independent examples. No human clue results are available yet.
+additional independent examples. Human follow-up results are recorded below.
+
+## First human coarse-timing pilot
+
+One reviewer completed the seven-query page: five clues and two declines, scored
+over the same31-query development cohort. No scope or confidence fields were
+collected by that first interface.
+
+| Method | stAP25 | tAP25 | Recovery | Success |
+|---|---:|---:|---:|---:|
+| Native REN | 0.4644 | 0.6102 | 51.90% | 58.06% |
+| Original gate, human clues as submitted | 0.4416 | 0.5815 | 54.91% | 54.84% |
+
+Three tracks changed: one improved, two worsened. Net recovered frames increased
+by15, but one fewer query passed the Success threshold. This explains why Recovery
+improved while AP fell. A remembered earlier sighting can be truthful and still
+conflict with the task's last annotated appearance.
+
+The separately planned viewing-metadata sensitivity declined the one clue whose
+video was not marked completed: stAP25 0.4651 and Recovery55.31%. Keep the as-
+submitted result primary; a missing completion flag is not proof a clue was wrong.
+
+The new uncertainty policy retains all31 native primary predictions when applied
+to the original file, because scope/confidence were not collected. That is a
+fallback behavior check, not a demonstrated performance gain. Its policy and an
+eight-source follow-up selection are frozen before collecting new human clues.
+The follow-up sources were absent from the first human review, but remain cached
+official-training development examples, not untouched benchmark validation.

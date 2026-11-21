@@ -7,6 +7,7 @@ import unittest
 from experiments.box_refinement.refinement import refine_boxes
 from experiments.additional_hints.hints import timing_rank,native_gated_choice
 from experiments.additional_hints.clarification import request_policy
+from experiments.additional_hints.uncertain import uncertain_prediction,context_density
 from experiments.candidate_tools.candidate_common import validate_query
 from experiments.candidate_tools.adapt_eagle import choose_records, export_pool
 
@@ -20,6 +21,36 @@ def query():
                 baseline_id='base',candidates=[candidate('base',0,.6),candidate('other',20,.7,2)])
 
 class CoreTests(unittest.TestCase):
+    def test_recalled_sighting_never_erases_a_later_primary_episode(self):
+        q=query();q['baseline_id']='other'
+        result=uncertain_prediction(q,dict(kind='third',value='early',
+                                         scope='remembered_sighting',confidence='high'))
+        self.assertEqual(result['selected_candidate'],'other')
+        # Earlier recalled sightings do not penalize a later candidate.
+        a=context_density(q['candidates'][0],q,dict(kind='third',value='early'),'remembered_sighting')
+        b=context_density(q['candidates'][1],q,dict(kind='third',value='early'),'remembered_sighting')
+        self.assertAlmostEqual(a,b)
+
+    def test_missing_confidence_does_not_invent_permission_to_override(self):
+        q=query()
+        result=uncertain_prediction(q,dict(kind='third',value='middle',scope='latest_estimate'))
+        self.assertEqual(result['selected_candidate'],'base')
+        self.assertEqual(result['decision']['confidence'],'unknown')
+        self.assertIn('other',result['suggested_candidate_ids'])
+
+    def test_high_confidence_latest_can_override_but_declines_cannot(self):
+        q=query();q['candidates'][1]['image_score']=.59;before=copy.deepcopy(q)
+        hint=dict(kind='third',value='middle',scope='latest_estimate',confidence='high')
+        result=uncertain_prediction(q,hint)
+        self.assertEqual(result['selected_candidate'],'other')
+        self.assertEqual(result['score'],q['score']);self.assertEqual(q,before)
+        declined=uncertain_prediction(q,dict(declined=True))
+        self.assertEqual(declined['selected_candidate'],'base')
+
+    def test_uncertain_hint_category_must_be_valid(self):
+        with self.assertRaises(ValueError):
+            uncertain_prediction(query(),dict(kind='third',value='late',confidence='certain'))
+
     def test_declined_hint_keeps_native_without_a_timestamp(self):
         q=query();selected,detail=native_gated_choice(q,dict(declined=True))
         self.assertEqual(selected,'base');self.assertFalse(detail['changed'])
