@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+output/
+exports/
+*.npz
+*.pt
+*.pth
+*.mp4
+*.MP4

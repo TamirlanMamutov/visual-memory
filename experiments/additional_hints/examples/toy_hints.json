@@ -1,0 +1,16 @@
+{
+  "provenance": "COMPLETELY SYNTHETIC FORMAT DEMO",
+  "queries": [
+    {
+      "key": "toy_query_a",
+      "kind": "time",
+      "seconds": 4.4,
+      "sigma_seconds": 0.2
+    },
+    {
+      "key": "toy_query_b",
+      "kind": "third",
+      "value": "early"
+    }
+  ]
+}

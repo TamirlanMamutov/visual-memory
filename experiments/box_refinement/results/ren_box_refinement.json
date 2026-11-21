@@ -1,0 +1,115 @@
+{
+  "scope": "51official-training development queries/36sources; new subset31queries/16sources; pretrained REN may have seen these examples. No comparison with teammate full-val EAGLE scores.",
+  "box_refinement": {
+    "all51": {
+      "REN_baseline": {
+        "stAP25": 0.47124678803067555,
+        "tAP25": 0.6121224025788833,
+        "Recovery": 56.54993514915694,
+        "Success": 58.82352941176471,
+        "spatial_mIoU": 0.4751976521014449,
+        "mean_track_IoU": 0.4314324899632178,
+        "mean_temporal_IoU": 0.6411002061886365,
+        "changed_queries": 0.0
+      },
+      "window_image": {
+        "stAP25": 0.4856733425787134,
+        "tAP25": 0.6121224025788833,
+        "Recovery": 63.942931258106356,
+        "Success": 62.745098039215684,
+        "spatial_mIoU": 0.5386300238173021,
+        "mean_track_IoU": 0.43631205124498224,
+        "mean_temporal_IoU": 0.6411002061886365,
+        "changed_queries": 6.0
+      },
+      "window_name": {
+        "stAP25": 0.47124678803067555,
+        "tAP25": 0.6121224025788833,
+        "Recovery": 56.54993514915694,
+        "Success": 58.82352941176471,
+        "spatial_mIoU": 0.4751976521014449,
+        "mean_track_IoU": 0.4314324899632178,
+        "mean_temporal_IoU": 0.6411002061886365,
+        "changed_queries": 0.0
+      },
+      "window_description": {
+        "stAP25": 0.47124678803067555,
+        "tAP25": 0.6121224025788833,
+        "Recovery": 56.679636835278856,
+        "Success": 58.82352941176471,
+        "spatial_mIoU": 0.4765376759578655,
+        "mean_track_IoU": 0.4317521054154445,
+        "mean_temporal_IoU": 0.6411002061886365,
+        "changed_queries": 3.0
+      },
+      "window_shuffled_description": {
+        "stAP25": 0.47124678803067555,
+        "tAP25": 0.6121224025788833,
+        "Recovery": 56.54993514915694,
+        "Success": 58.82352941176471,
+        "spatial_mIoU": 0.4751976521014449,
+        "mean_track_IoU": 0.4314324899632178,
+        "mean_temporal_IoU": 0.6411002061886365,
+        "changed_queries": 0.0
+      }
+    },
+    "new31": {
+      "REN_baseline": {
+        "stAP25": 0.46435952935952934,
+        "tAP25": 0.6101843317972352,
+        "Recovery": 51.90380761523046,
+        "Success": 58.06451612903226,
+        "spatial_mIoU": 0.4373966918406615,
+        "mean_track_IoU": 0.43171955820609004,
+        "mean_temporal_IoU": 0.6524766407988412,
+        "changed_queries": 0.0
+      },
+      "window_image": {
+        "stAP25": 0.4925497262594037,
+        "tAP25": 0.6101843317972352,
+        "Recovery": 65.53106212424849,
+        "Success": 64.51612903225806,
+        "spatial_mIoU": 0.5505055849875296,
+        "mean_track_IoU": 0.45116903074180653,
+        "mean_temporal_IoU": 0.6524766407988412,
+        "changed_queries": 4.0
+      },
+      "window_name": {
+        "stAP25": 0.46435952935952934,
+        "tAP25": 0.6101843317972352,
+        "Recovery": 51.90380761523046,
+        "Success": 58.06451612903226,
+        "spatial_mIoU": 0.4373966918406615,
+        "mean_track_IoU": 0.43171955820609004,
+        "mean_temporal_IoU": 0.6524766407988412,
+        "changed_queries": 0.0
+      },
+      "window_description": {
+        "stAP25": 0.46435952935952934,
+        "tAP25": 0.6101843317972352,
+        "Recovery": 51.90380761523046,
+        "Success": 58.06451612903226,
+        "spatial_mIoU": 0.43802304248173174,
+        "mean_track_IoU": 0.43138921187627727,
+        "mean_temporal_IoU": 0.6524766407988412,
+        "changed_queries": 2.0
+      },
+      "window_shuffled_description": {
+        "stAP25": 0.46435952935952934,
+        "tAP25": 0.6101843317972352,
+        "Recovery": 51.90380761523046,
+        "Success": 58.06451612903226,
+        "spatial_mIoU": 0.4373966918406615,
+        "mean_track_IoU": 0.43171955820609004,
+        "mean_temporal_IoU": 0.6524766407988412,
+        "changed_queries": 0.0
+      }
+    }
+  },
+  "portable_regression_checks": {
+    "all51_refined_tracks_exact": true,
+    "all_simulation_rankings_exact": true,
+    "all_metric_means_match_tolerance": 1e-12
+  },
+  "multimodal_caveat": "Object-name and assistant appearance-description fusion did not establish a gain; window image refinement is image-only. Speech and independently remembered actions have not been tested here."
+}
