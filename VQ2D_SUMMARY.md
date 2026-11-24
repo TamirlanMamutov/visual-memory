@@ -94,8 +94,8 @@ Options A and B below were tested on Nov 24 on a slice of the data and reproduce
 
 ### Setup
 
-1. Clone `git@github.com:TamirlanMamutov/visual-memory.git` and check out branch `zr` at commit `addc72e` or later. `main` is older and lacks the scoring fix (`ae35b68`).
-2. Create the Python environment as in `REPRODUCTION.md`, section "Environment". Run every command from the `visual-memory` folder with `..\cs230-venv\env\Scripts\python.exe`, written `python` below.
+1. Clone `git@github.com:TamirlanMamutov/visual-memory.git` and check out branch `zr` at commit `07d4365` or later. `main` is older and lacks the scoring fix (`ae35b68`).
+2. Create the Python environment (transformers 5.22 or later, CUDA PyTorch) as in `REPRODUCTION.md`, section "Environment". Run every command from the `visual-memory` folder with `..\cs230-venv\env\Scripts\python.exe`, written `python` below.
 3. Put these folders next to `visual-memory`, inside one project folder. The scripts find them by these relative paths:
 
 | Folder | Needed for | What it is |
@@ -146,7 +146,7 @@ Run `python run_eagle.py --stage prepare` once first; it writes SAM pseudo-masks
 | 3 | `120cd72` | `python run_eagle.py --stage all --finetune-blocks 4 --no-visor` | |
 | 5 | `aee6859` | `python run_eagle.py --stage all` | VISOR must be at `..\EPIC-KITCHENS-VISOR\GroundTruth-SparseAnnotations` |
 
-Those old commits print large-only metrics at the end. Then check out `addc72e` or later and run option A on the three new folders, which scores all queries. Fresh trainings on a GPU aren't bit-identical, so expect numbers close to ours, not exact.
+Those old commits print large-only metrics at the end. Then check out `07d4365` or later and run option A on the three new folders, which scores all queries. Fresh trainings on a GPU aren't bit-identical, so expect numbers close to ours, not exact.
 
 ### Comparing other predictions
 
