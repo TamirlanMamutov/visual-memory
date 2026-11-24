@@ -90,37 +90,67 @@ Nothing was trained on val, but val was also our development set, so the result 
 
 ## How to reproduce
 
-Check out branch `zr` (commit `ae35b68`) of `TamirlanMamutov/visual-memory`. `main` is still at `422f0c0` and lacks `vq2d_compare.py`. Read three files in this order:
+Options A and B below were tested on Nov 24 on a slice of the data and reproduced our saved results exactly: all 4,501 ensemble tracks, 1,657 of 1,657 SAM 2 frame boxes on 5 clips, and 9 of 9 tracks for each of the three checkpoints on 2 clips. Option C is the same commands the original runs used, but it takes days and was not re-run.
 
-| File | What it covers |
-|---|---|
-| `README.md` | Shared folder layout and how to launch |
-| `REPRODUCTION.md` | Python environment setup and the EAGLE pipeline: pseudo-masks, training, evaluation, resume |
-| `EAGLE_RUNS.md` | The command and git commit for every run, 1 to 6 |
+### Setup
 
-Run from `visual-memory` with `..\cs230-venv\env\Scripts\python.exe` (written `python` below). Pick the option that matches how much you want to redo:
+1. Clone `git@github.com:TamirlanMamutov/visual-memory.git` and check out branch `zr` at commit `addc72e` or later. `main` is older and lacks the scoring fix (`ae35b68`).
+2. Create the Python environment as in `REPRODUCTION.md`, section "Environment". Run every command from the `visual-memory` folder with `..\cs230-venv\env\Scripts\python.exe`, written `python` below.
+3. Put these folders next to `visual-memory`, inside one project folder. The scripts find them by these relative paths:
 
-1. **From saved evaluations, about 5 hours.** Rebuild the ensemble, then run SAM 2:
+| Folder | Needed for | What it is |
+|---|---|---|
+| `VQLoC` | A, B, C | A clone of `hwjiang1510/VQLoC`; our scoring imports its metric code |
+| `Ego4D\v2\annotations`, `Ego4D\v2\clips` | A, B, C | VQ2D annotations and video clips, under the Ego4D license |
+| `visual-memory\output\eagle-20261111-221053`, `eagle-20261114-002928`, `eagle-20261114-204835` | A | Saved per-frame evaluations of runs 2, 3 and 5 (shared Google Drive) |
+| `cs230-cache\eagle\checkpoints` | B | Trained weights of every run (shared Google Drive) |
+| `Ego4D\v2\egotracks` | C | EgoTracks annotations (`egotracks_train.json`) |
+| `EPIC-KITCHENS-VISOR` | C, run 5 only | VISOR sparse annotations and frames |
 
-   ```bash
-   python eagle_ensemble.py output\eagle-20261111-221053 output\eagle-20261114-002928 output\eagle-20261114-204835 --out output\ens3-mask0
-   python eagle_sam2.py output\ens3-mask0 --clips 0: --model facebook/sam2.1-hiera-small --margin 30 --tag small-m30
-   ```
-2. **From checkpoints, about 12 hours per run.** Re-evaluate runs 2, 3 and 5, then option 1:
+All times are measured on one RTX 4070 with 12 GB of memory. SAM 2.1, DINOv2 and SAM download from Hugging Face on first use.
 
-   ```bash
-   python run_eagle.py --stage evaluate --resume output\eagle-20261111-221053
-   ```
-3. **From scratch, 2 to 3 days of GPU.** Check out each run's commit and use its command in `EAGLE_RUNS.md` sections 2, 3 and 5, then option 1.
+### A. From our saved evaluations (about 10 hours)
 
-To score any prediction files against ours on exactly the same queries: `python vq2d_compare.py --pred ours=run6 --pred theirs=<predictions.json>`. Use commit `ae35b68` or later: from that commit every script scores all queries with the official setting. Older commits print the large-only numbers.
+Write to a **new** folder. Reusing `output\ens3-mask0` would not reproduce anything: `eagle_sam2.py` skips clips already refined there and would only re-score our saved boxes.
 
-Options 1 and 2 need the shared Google Drive project folder, which isn't in git:
+```powershell
+python eagle_ensemble.py output\eagle-20261111-221053 output\eagle-20261114-002928 output\eagle-20261114-204835 --out output\ens3-mask0-repro
+python eagle_sam2.py output\ens3-mask0-repro --clips 0: --model facebook/sam2.1-hiera-small --margin 30 --tag small-m30
+```
 
-- `visual-memory\output\`: saved evaluations (`eval_parts`) for runs 2, 3, 5 and `ens3-mask0`
-- `cs230-cache\eagle\checkpoints\`: trained weights for every run
-- `Ego4D\v2\`: VQ2D annotations and clips, under the Ego4D license
-- `hf-models\`: a local copy of SAM 2.1-hiera-small
+- **The first command** takes a few minutes on the CPU and should print exactly `stAP25 0.3695 tAP25 0.4686 stAP 0.1714 tAP 0.2869 Succ 62.7416 Rec 45.5860` (run 6a).
+- **The second** takes about 30 seconds per clip, roughly 10 hours for 1,156 clips. It resumes if rerun with the same command. Its final table's `extend` row is run 6: stAP25 0.4228, tAP25 0.5033, stAP 0.2286, tAP 0.3712, Succ 64.12, Rec 58.07.
+
+### B. From our checkpoints (about 14 hours per run, then A)
+
+Each command evaluates one checkpoint into a new `output\eagle-<start time>` folder:
+
+```powershell
+python run_eagle.py --stage evaluate --checkpoint ..\cs230-cache\eagle\checkpoints\eagle-20261111-221053\last.pt
+python run_eagle.py --stage evaluate --checkpoint ..\cs230-cache\eagle\checkpoints\eagle-20261114-002928\last.pt
+python run_eagle.py --stage evaluate --checkpoint ..\cs230-cache\eagle\checkpoints\eagle-20261114-204835\last.pt
+```
+
+- Run 3's fine-tuned DINOv2 blocks load from its checkpoint automatically; its log says `loaded 74 fine-tuned DINOv2 tensors`.
+- Each run's `metrics.json` should match: stAP25 0.281 for run 2, 0.301 for run 3 and 0.258 for run 5.
+- If one is interrupted, continue it with `python run_eagle.py --stage evaluate --resume output\eagle-<that new folder>`. Don't use `--resume` on our original folders: it reuses their saved predictions instead of recomputing them.
+- Then run option A with the three new folders in place of ours.
+
+### C. Train from scratch (about 1 day per run, then A)
+
+Run `python run_eagle.py --stage prepare` once first; it writes SAM pseudo-masks for every training query and resumes if interrupted. Then train and evaluate each run at the commit it used:
+
+| Run | Commit | Command | Note |
+|---|---|---|---|
+| 2 | `7d14dbd` | `python run_eagle.py --stage all --no-visor` | `--no-visor` is required: this commit uses VISOR automatically when it is on disk, and run 2 was trained without it |
+| 3 | `120cd72` | `python run_eagle.py --stage all --finetune-blocks 4 --no-visor` | |
+| 5 | `aee6859` | `python run_eagle.py --stage all` | VISOR must be at `..\EPIC-KITCHENS-VISOR\GroundTruth-SparseAnnotations` |
+
+Those old commits print large-only metrics at the end. Then check out `addc72e` or later and run option A on the three new folders, which scores all queries. Fresh trainings on a GPU aren't bit-identical, so expect numbers close to ours, not exact.
+
+### Comparing other predictions
+
+`python vq2d_compare.py --pred ours=run6 --pred theirs=<predictions.json>` scores any prediction file against run 6 on exactly the same queries, with a paired bootstrap interval.
 
 ## Box refinement from Qiaomiao's branch
 

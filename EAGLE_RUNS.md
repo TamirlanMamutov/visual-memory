@@ -82,7 +82,7 @@ git checkout 7d14dbd
 python run_eagle.py --stage all
 ```
 
-It was resumed three times with `--resume output\eagle-20261111-221053`. VISOR wasn't on disk yet.
+It was resumed three times with `--resume output\eagle-20261111-221053`. VISOR wasn't on disk yet. This commit uses VISOR automatically whenever it is on disk, so to reproduce run 2 on a machine that has VISOR, add `--no-visor`.
 
 ## 3. Fine-tuning the last 4 DINOv2 blocks: `eagle-20261114-002928`
 
@@ -125,6 +125,8 @@ Run on Nov 19 with no retraining, from the per-frame traces that runs 2, 3 and 5
 python eagle_ensemble.py output\eagle-20261111-221053 output\eagle-20261114-002928 output\eagle-20261114-204835 --out output\ens3-mask0
 python eagle_sam2.py output\ens3-mask0 --clips 0: --model facebook/sam2.1-hiera-small --margin 30 --tag small-m30
 ```
+
+These are the commands as run. To reproduce, write to a new folder such as `--out output\ens3-mask0-repro`: `eagle_sam2.py` skips clips already in `sam2\small-m30\`, so rerunning into `ens3-mask0` only re-scores the saved boxes. [VQ2D_SUMMARY.md](VQ2D_SUMMARY.md), "How to reproduce", has the tested commands, setup and expected output.
 
 - **Trace ensembling:** the three runs' per-frame confidences are averaged with equal weights, and each frame keeps the box of the most confident run. The paper's default post-processing rule then builds the track. Averaging removes many wrong time windows: Success, which ignores track scores, rises from 56.10 for run 2 to 62.14.
 - **Visual-crop constraint:** the crop is a sighting of the object, and the response track is the *last* occurrence before the query. When the crop's frame comes before the query frame, frames up to the crop frame get confidence 0. This uses only the query input. It applies to 42% of val queries.
