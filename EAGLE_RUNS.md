@@ -21,7 +21,7 @@ One row per run or paper result across the three tasks: Ego4D VQ2D, the multimod
 - **Code:** the commit the run used. When a run started before its code was committed, the commit that later recorded that code is in brackets.
 - **Init:** where the weights came from.
 - **Change:** what differs from the run it was built on.
-- **Metrics:** VQ2D metrics come from the official evaluator. Frame mIoU is the mean box IoU on frames that contain the object, and presence F1 scores whether each frame is predicted to contain it. Retrieval mAP and nDCG are in percent; V→T is video→text, T→V is text→video. "Dual" columns score the text–video encoder alone, and "Rerank" columns add TempRet's reranking stage on top of it. The TempRet paper reports a single final score, listed under Dual.
+- **Metrics:** VQ2D metrics use the official Ego4D setting, which scores every query (`vc_rt_pairings = {"all": ("all", "all")}`, the default in `EGO4D/episodic-memory`'s `evaluate_vq.py`). Before Nov 24 our numbers came from VQLoC's copy of the evaluator, whose default `("all", "large")` silently keeps only the 2,336 of 4,504 val queries whose ground-truth box reaches 192² px. Those large-only numbers were higher (run 6: stAP25 0.531 vs 0.423) and are no longer used here; `vq_metrics(..., pairing=VQLOC_PAIRING)` reproduces them. Paper rows are as each paper reports them: VQLoC's code uses the large-only filter, PRVQL's and REN's score all queries, and EAGLE and RELOCATE released no evaluation code, so their setting is unknown. Frame mIoU is the mean box IoU on frames that contain the object, and presence F1 scores whether each frame is predicted to contain it. Retrieval mAP and nDCG are in percent; V→T is video→text, T→V is text→video. "Dual" columns score the text–video encoder alone, and "Rerank" columns add TempRet's reranking stage on top of it. The TempRet paper reports a single final score, listed under Dual.
 - **Multimodal localization prototype:** from the teammate's branch `tamirlan/multimodal-localization-model`. It is scored on 27 VQ2D val queries from 8 videos, with sparsely sampled frames, so its frame mIoU and F1 compare only roughly with ours on 4,501 queries.
 - **Old mAP:** these rows were scored before the official EK-100 mAP fix (`52f857e`), so their mAP is understated; nDCG is unaffected.
 
@@ -30,12 +30,12 @@ One row per run or paper result across the three tasks: Ego4D VQ2D, the multimod
 | VQ2D | EAGLE paper | — | — | DINOv2 fine-tuned on EgoTracks, then frozen; segmentation trained on Ego4D, EgoTracks and VISOR | val | 0.47 | 0.42 | — | — | 61.29 | 52.09 | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | VQ2D | REN paper | — | — | frozen DINOv2 ViT-L/14 with REN region tokens and SAM 2; no VQ2D training | test server | 0.52 | 0.40 | — | — | 61.2 | 49.3 | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | VQ2D | RELOCATE (from EAGLE's Table 1) | — | — | SAM-based region tokens; no VQ2D training | val | 0.41 | 0.33 | — | — | 58.03 | 50.50 | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 1. Baseline `eagle-20261110-084401` | train `2125dd1`, eval `1f0a52c` | first full run: VQ2D only, after the mask-decoder collapse fix; per-frame BatchNorm at evaluation | DINOv2-base pretrained and frozen; EAGLE memory and decoder random; SAM ViT-B only makes training pseudo-masks | val, 4,501 queries | 0.406 | 0.319 | 0.232 | 0.142 | 60.74 | 40.35 | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 2. EgoTracks `eagle-20261111-221053` | `7d14dbd` | 1 + EgoTracks long-term tracks in training | as 1 | val, 4,501 queries | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 | 0.351 | 0.490 | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 3. Fine-tuned 4 blocks `eagle-20261114-002928` | `120cd72` | 2 + training the last 4 DINOv2 blocks (LR 2.5e-5) | as 1, with the last 4 blocks trainable | val, 4,501 queries | 0.445 | 0.378 | 0.265 | 0.180 | 62.89 | 43.58 | 0.345 | 0.511 | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 4. Run 2 + SAM 2 | `8ed086d` | 2 + SAM 2 `extend` box refinement, margin 10; no training | run 2's weights + SAM 2.1 Hiera Small | val clips 0–350, 1,348 queries | 0.533 | 0.448 | 0.377 | 0.250 | 65.46 | 55.52 | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 5. VISOR `eagle-20261114-204835` | `aee6859` | 2 + VISOR (mix: VQ2D 50%, EgoTracks 25%, VISOR 25%) | as 1 | val, 4,501 queries | 0.450 | 0.351 | 0.260 | 0.161 | 63.18 | 44.14 | 0.343 | 0.476 | — | — | — | — | — | — | — | — | — | — | — | — |
-| VQ2D | 6. Ensemble `ens3-mask0` + SAM 2 | `422f0c0` | ensemble of 2, 3 and 5, visual-crop constraint, SAM 2 `extend` with margin 30; no training | runs 2, 3 and 5 + SAM 2.1 Hiera Small | val, 4,501 queries | **0.598** | **0.531** | **0.448** | **0.301** | **71.70** | **62.07** | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 1. Baseline `eagle-20261110-084401` | train `2125dd1`, eval `1f0a52c` | first full run: VQ2D only, after the mask-decoder collapse fix; per-frame BatchNorm at evaluation | DINOv2-base pretrained and frozen; EAGLE memory and decoder random; SAM ViT-B only makes training pseudo-masks | val, 4,501 queries | 0.318 | 0.229 | 0.179 | 0.097 | 52.32 | 36.72 | 0.312 | 0.452 | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 2. EgoTracks `eagle-20261111-221053` | `7d14dbd` | 1 + EgoTracks long-term tracks in training | as 1 | val, 4,501 queries | 0.380 | 0.281 | 0.223 | 0.124 | 56.10 | 41.18 | 0.351 | 0.490 | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 3. Fine-tuned 4 blocks `eagle-20261114-002928` | `120cd72` | 2 + training the last 4 DINOv2 blocks (LR 2.5e-5) | as 1, with the last 4 blocks trainable | val, 4,501 queries | 0.374 | 0.301 | 0.220 | 0.138 | 56.81 | 40.57 | 0.345 | 0.511 | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 4. Run 2 + SAM 2 | `8ed086d` | 2 + SAM 2 `extend` box refinement, margin 10; no training | run 2's weights + SAM 2.1 Hiera Small | val clips 0–350, 1,348 queries | 0.437 | 0.353 | 0.308 | 0.190 | 58.68 | 52.41 | 0.465 | 0.529 | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 5. VISOR `eagle-20261114-204835` | `aee6859` | 2 + VISOR (mix: VQ2D 50%, EgoTracks 25%, VISOR 25%) | as 1 | val, 4,501 queries | 0.354 | 0.258 | 0.204 | 0.113 | 54.12 | 40.03 | 0.343 | 0.476 | — | — | — | — | — | — | — | — | — | — | — | — |
+| VQ2D | 6. Ensemble `ens3-mask0` + SAM 2 | `422f0c0` | ensemble of 2, 3 and 5, visual-crop constraint, SAM 2 `extend` with margin 30; no training | runs 2, 3 and 5 + SAM 2.1 Hiera Small | val, 4,501 queries | **0.503** | **0.423** | **0.371** | **0.229** | **64.12** | **58.07** | **0.518** | **0.586** | — | — | — | — | — | — | — | — | — | — | — | — |
 | Multimodal localization | Temporal prototype | `9c47669` | first real Ego4D run: 117 training queries, 10 epochs, checkpoint chosen by val loss | frozen DINOv2 ViT-S/14 at 224 px (official weights); heads random | VQ2D val, 27 queries | — | — | — | — | — | — | 0.006 | 0.043 | — | — | — | — | — | — | — | — | — | — | — | — |
 | Multimodal localization | Spatial matcher, Ego4D only | `dfce151` | per-frame spatial matcher; checkpoint chosen by IoU | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.089 | 0.059 | — | — | — | — | — | — | — | — | — | — | — | — |
 | Multimodal localization | Spatial matcher + EPIC (joint) | `dfce151` | + EPIC noun classification as an auxiliary task (31 segments, weight 0.1) | as above | VQ2D val, 27 queries | — | — | — | — | — | — | 0.089 | 0.059 | — | — | — | — | — | — | — | — | — | — | — | — |
@@ -54,7 +54,7 @@ One row per run or paper result across the three tasks: Ego4D VQ2D, the multimod
 | Retrieval | TempRet `131307` | `6a873d0` (+ `52f857e`) | 10 epochs on 4,881 clips without the temporal module; no reranker | as above | local subset, 1,256 test clips | — | — | — | — | — | — | — | — | 27.7 | 26.3 | 27.0 | 32.9 | 31.9 | 32.4 | — | — | — | — | — | — |
 | Retrieval | TempRet `162636` (smoke test) | `2d5ddc3` (+ `11744e1`) | full fine-tuning of CLIP, 1 epoch, 8-bit AdamW, 640 training clips | OpenAI CLIP ViT-L/14, all layers trained | local subset, 128 test clips | — | — | — | — | — | — | — | — | 34.4 | 38.9 | 36.6 | 40.4 | 37.9 | 39.2 | 33.9 | 38.9 | 36.4 | 39.1 | 37.5 | 38.3 |
 
-Not in the table, to keep one row per run: EAGLE on the test server scores tAP25 0.46, stAP25 0.40, Succ 62.70 and Rec 53.51, the fair comparison for REN. Run 2 scored on clips 0–350 only, the subset run 4 used, gives tAP25 0.486, stAP25 0.400, tAP 0.300, stAP 0.189, Succ 64.63 and Rec 47.40. `100605` reused the `020438` encoder unchanged, so its Dual columns repeat `020438`'s.
+Not in the table, to keep one row per run: EAGLE on the test server scores tAP25 0.46, stAP25 0.40, Succ 62.70 and Rec 53.51, the fair comparison for REN. Run 2 scored on clips 0–350 only, the subset run 4 used, gives tAP25 0.403, stAP25 0.308, tAP 0.243, stAP 0.138, Succ 57.64 and Rec 42.77. `100605` reused the `020438` encoder unchanged, so its Dual columns repeat `020438`'s.
 
 ## 1. Baseline (VQ2D only): `eagle-20261110-084401`
 
@@ -126,41 +126,45 @@ python eagle_ensemble.py output\eagle-20261111-221053 output\eagle-20261114-0029
 python eagle_sam2.py output\ens3-mask0 --clips 0: --model facebook/sam2.1-hiera-small --margin 30 --tag small-m30
 ```
 
-- **Trace ensembling:** the three runs' per-frame confidences are averaged with equal weights, and each frame keeps the box of the most confident run. The paper's default post-processing rule then builds the track. Averaging removes many wrong time windows: with every track given the same score, the ensemble still beats run 2 by 0.077 stAP25.
+- **Trace ensembling:** the three runs' per-frame confidences are averaged with equal weights, and each frame keeps the box of the most confident run. The paper's default post-processing rule then builds the track. Averaging removes many wrong time windows: Success, which ignores track scores, rises from 56.10 for run 2 to 62.14.
 - **Visual-crop constraint:** the crop is a sighting of the object, and the response track is the *last* occurrence before the query. When the crop's frame comes before the query frame, frames up to the crop frame get confidence 0. This uses only the query input. It applies to 42% of val queries.
 - **SAM 2 `extend`:** the same refinement as run 4, with a margin of 30 frames instead of 10.
 
-No setting was tuned on val. Equal weights, crop margin 0, the paper's post-processing and SAM 2 margin 30 were all fixed in advance. A sweep on clips 351+ found no setting that clearly beat them on clips 0–350.
+No setting was tuned on val. Equal weights, crop margin 0, the paper's post-processing and SAM 2 margin 30 were all fixed in advance. A sweep on clips 351+ found no setting that clearly beat them on clips 0–350; that sweep was scored with VQLoC's large-only filter and has not been rerun with the official setting.
 
-Full val ablation:
+Full val ablation, official setting (all 4,501 queries):
 
 | Step | tAP25 | stAP25 | tAP | stAP | Succ | Rec |
 |---|---|---|---|---|---|---|
-| Run 2 alone | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 |
-| Run 2 + crop constraint | 0.477 | 0.390 | 0.291 | 0.181 | 64.51 | 46.52 |
-| Ensemble of 2 + 3 + 5 | 0.540 | 0.464 | 0.332 | 0.222 | 70.46 | 49.21 |
-| Ensemble + crop constraint | 0.553 | 0.473 | 0.344 | 0.229 | 70.85 | 49.39 |
-| + SAM 2 `extend`, margin 30 | 0.598 | 0.531 | 0.448 | 0.301 | 71.70 | 62.07 |
+| Run 2 alone | 0.380 | 0.281 | 0.223 | 0.124 | 56.10 | 41.18 |
+| Run 2 + crop constraint | 0.392 | 0.290 | 0.234 | 0.128 | 56.34 | 41.33 |
+| Ensemble of 2 + 3 + 5 | 0.446 | 0.355 | 0.270 | 0.163 | 62.14 | 45.37 |
+| Ensemble + crop constraint | 0.469 | 0.370 | 0.287 | 0.171 | 62.74 | 45.59 |
+| + SAM 2 `extend`, margin 30 | 0.503 | 0.423 | 0.371 | 0.229 | 64.12 | 58.07 |
 
 Caveats: the ensemble runs three EAGLE models plus SAM 2, about 3× the inference cost of one EAGLE model. These are val numbers, and the test set has not been scored.
 
 ## Results on Ego4D VQ2D val
 
+Our rows use the official Ego4D setting (every query). Paper rows are as reported; which setting EAGLE used is unknown (see the Metrics note at the top).
+
 | Run | tAP25 | stAP25 | tAP | stAP | Succ | Rec |
 |---|---|---|---|---|---|---|
 | EAGLE paper (val) | 0.47 | 0.42 | — | — | 61.29 | 52.09 |
 | REN paper (test) | 0.52 | 0.40 | — | — | 61.2 | 49.3 |
-| 1. Baseline | 0.406 | 0.319 | 0.232 | 0.142 | 60.74 | 40.35 |
-| 2. EgoTracks | 0.472 | 0.386 | 0.283 | 0.179 | 64.51 | 46.35 |
-| 3. Fine-tuned 4 blocks | 0.445 | 0.378 | 0.265 | 0.180 | 62.89 | 43.58 |
-| 2 on clips 0–350 only | 0.486 | 0.400 | 0.300 | 0.189 | 64.63 | 47.40 |
-| 4. 2 + SAM 2 `extend`, clips 0–350 | 0.533 | 0.448 | 0.377 | 0.250 | 65.46 | 55.52 |
-| 5. VISOR | 0.450 | 0.351 | 0.260 | 0.161 | 63.18 | 44.14 |
-| 5 on clips 0–350 only | 0.456 | 0.364 | 0.266 | 0.173 | 62.69 | 44.69 |
-| 6. Ensemble 2+3+5 + crop constraint | 0.553 | 0.473 | 0.344 | 0.229 | 70.85 | 49.39 |
-| **6. + SAM 2 `extend`, margin 30** | **0.598** | **0.531** | **0.448** | **0.301** | **71.70** | **62.07** |
+| 1. Baseline | 0.318 | 0.229 | 0.179 | 0.097 | 52.32 | 36.72 |
+| 2. EgoTracks | 0.380 | 0.281 | 0.223 | 0.124 | 56.10 | 41.18 |
+| 3. Fine-tuned 4 blocks | 0.374 | 0.301 | 0.220 | 0.138 | 56.81 | 40.57 |
+| 2 on clips 0–350 only | 0.403 | 0.308 | 0.243 | 0.138 | 57.64 | 42.77 |
+| 4. 2 + SAM 2 `extend`, clips 0–350 | 0.437 | 0.353 | 0.308 | 0.190 | 58.68 | 52.41 |
+| 5. VISOR | 0.354 | 0.258 | 0.204 | 0.113 | 54.12 | 40.03 |
+| 5 on clips 0–350 only | 0.370 | 0.278 | 0.215 | 0.126 | 55.79 | 41.39 |
+| 6. Ensemble 2+3+5 + crop constraint | 0.469 | 0.370 | 0.287 | 0.171 | 62.74 | 45.59 |
+| **6. + SAM 2 `extend`, margin 30** | **0.503** | **0.423** | **0.371** | **0.229** | **64.12** | **58.07** |
 
 All full-val rows score 4,501 queries; the clips 0–350 rows score 1,348.
+
+With the official setting, run 3 has a higher stAP25 than run 2 (0.301 vs 0.281); under the large-only filter it was the other way round. Run 2 still has the higher tAP25.
 
 Adding VISOR (run 5) lowered every metric compared with run 2, on both the full val set and clips 0–350. A likely cause is that VISOR's 25% share cut EgoTracks from about 50% of the training mix to 25%. Training metrics didn't predict this: run 5 was ahead of run 2 throughout training.
 

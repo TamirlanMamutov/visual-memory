@@ -163,8 +163,18 @@ def track_from_trace(trace, window=5, peak=0.8, extend=None, gap=0, pick='last')
     return ResponseTrack(bboxes, score=float(sm[start:end + 1].max()))
 
 
-def vq_metrics(records, predictions):
-    """Official VQ2D metrics via the sibling VQLoC repository's evaluation code."""
+# The official Ego4D evaluator (EGO4D/episodic-memory, VQ2D/evaluate_vq.py) scores every query:
+# its default is {'all': ('all', 'all')}. VQLoC's copy of metrics.py changed the default to
+# ('all', 'large'), which silently keeps only queries whose ground-truth box reaches 192^2 px in some
+# frame (2,336 of 4,504 val queries). We pass the official pairing explicitly. Use
+# pairing=VQLOC_PAIRING only to reproduce numbers scored with VQLoC's default.
+OFFICIAL_PAIRING = ('all', 'all')
+VQLOC_PAIRING = ('all', 'large')
+
+
+def vq_metrics(records, predictions, pairing=OFFICIAL_PAIRING):
+    """VQ2D metrics with the official Ego4D setting (every query), via the sibling VQLoC
+    repository's metric code."""
     sys.path.insert(0, str(ROOT / 'VQLoC'))
     from evaluation.structures import BBox, ResponseTrack
     from metrics.metrics import compute_visual_query_metrics
@@ -177,7 +187,7 @@ def vq_metrics(records, predictions):
         f, b = r['visual_crop']; vcs.append(BBox(f, *b))
     if not preds:
         return {}
-    m = compute_visual_query_metrics(preds, gts, vcs)['all']
+    m = compute_visual_query_metrics(preds, gts, vcs, vc_rt_pairings={'all': pairing})['all']
     pick = {'tAP25': 'Temporal AP                    @ IoU=0.25     ',
             'tAP': 'Temporal AP                    @ IoU=0.25:0.95',
             'stAP25': 'SpatioTemporal AP              @ IoU=0.25     ',
