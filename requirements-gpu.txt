@@ -2,7 +2,9 @@
 # Install CUDA PyTorch first:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 open_clip_torch>=3
-transformers>=4.45
+# eagle_sam2.py needs transformers' Sam2VideoModel, which 4.45 lacks. Tested with transformers 5.22.2
+# and torch 2.11.0+cu128; no lower version was tried.
+transformers>=5.22
 av>=12
 opencv-python>=4.8
 numpy>=1.24
