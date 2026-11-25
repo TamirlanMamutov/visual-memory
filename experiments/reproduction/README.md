@@ -4,10 +4,51 @@ This branch adds experiments under `experiments/` only. Teammate EAGLE training,
 evaluation and report files remain unchanged. Start here; the root
 [VQ2D_SUMMARY.md](../../VQ2D_SUMMARY.md) describes the teammate's EAGLE work.
 
+## Results at a glance — 2026-11-24
+
+**The stats-only quality verifier is our strongest current validation lead by
+point estimate.** It remains a predeclared secondary analysis, and the AP gain
+is uncertain. All methods below used the same **50 reserved validation queries
+from 25 sources**, with models and thresholds frozen before evaluation. These
+are official **all/all** metrics on a subset, not full-benchmark results.
+
+| Method | Analysis role | stAP25 | tAP25 | Recovery | Success |
+|---|---|---:|---:|---:|---:|
+| Native released REN pipeline | Baseline | 0.3917 | 0.4622 | 43.40% | 54.00% |
+| Expanded candidates + stats/image/name verifier | Primary | 0.4038 | 0.4761 | 48.43% | 56.00% |
+| Expanded candidates + stats-only verifier | Secondary | **0.4447** | **0.5216** | **52.99%** | **60.00%** |
+| Expanded candidates + stats/image verifier | Secondary | 0.4038 | 0.4761 | 48.43% | 56.00% |
+
+Stats-only improves stAP25 by **0.0530** and Recovery by **9.59 percentage points**.
+Its paired source-bootstrap 95% AP-difference interval is **[-0.0027, +0.1314]**;
+the primary arm's AP difference is +0.0121, interval **[-0.0391, +0.0678]**.
+Both AP intervals include zero. Secondary comparisons are not multiplicity-adjusted.
+Keep the primary/secondary labels and use fresh sources to confirm any method
+selected from these results. Image/name and image-only made identical final
+choices, so this does not demonstrate useful text fusion.
+
+### What looks worth trying next
+
+| Priority | Experiment | Evidence so far / next action |
+|---|---|---|
+| High | Stats-only verifier | Strongest reserved-validation point gain. Audit changed cases, retain native/latest-center controls, then confirm on a fresh cohort. EAGLE transfer requires its own training-source features and retraining. |
+| High | Window-preserving image box refinement | On a separate 51-query/36-source development cohort, stAP25 **0.4712 → 0.4857**, Recovery **56.55% → 63.94%**. Test on final EAGLE+SAM tracks while keeping their time window and AP confidence fixed; transfer gain is still unknown. |
+| Exploratory | Timing hints and multimodal ranking | Precise GT-derived timing simulations can help, but wrong/earlier clues can hurt. The first real-clue pilot lowered AP; fixed image/text fusion showed no consistent benefit. Improve candidate coverage and test independent, fallible human inputs. |
+| Lower | Hand-interaction proxies | Mixed development results: all-hand features reduced all-60-query stAP25 **0.5096 → 0.4509** versus the matched stats control. No hand variant was used in reserved validation. |
+
+The teammate's EAGLE checkpoints, saved evaluations and final SAM outputs have
+now been located in the shared Drive. They have **not yet been downloaded or
+rescored here**. Our subset scores cannot establish a head-to-head win over
+their full 4,501-query result. See [RESULTS.md](RESULTS.md) for complete tables,
+uncertainty and cohort definitions, and [EAGLE_TRANSFER.md](EAGLE_TRANSFER.md)
+for the proposed matched add-on test.
+
+## Work ownership and status
+
 | Work | Owner / model | Status and scope |
 |---|---|---|
 | EAGLE training, EgoTracks/VISOR ablations, ensemble and SAM2 extension | Teammate, `zr` | Full 4,501-query validation reported; see their summary |
-| Candidate quality verifier | Qiaomiao, released REN candidate tracks + small trained heads | Training-source CV complete; separate frozen50-query validation complete |
+| Candidate quality verifier | Qiaomiao, released REN candidate tracks + small trained heads | Training-source CV complete; separate frozen 50-query validation complete |
 | Window-preserving box refinement | Qiaomiao, cached CLIP crop similarities | 51-query development replay verified; EAGLE transfer not tested yet |
 | Timing hints / selective clarification | Qiaomiao, fixed candidate ranking policies | Simulations complete; limited legacy human-clue pilot; new scoped/confidence study pending |
 | Image, text, combined and transcript query ranking | Qiaomiao, CLIP over fixed image-generated candidates | Cached 20-query pilot; no consistent fusion gain; real recorded speech not evaluated |
