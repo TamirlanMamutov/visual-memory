@@ -1,0 +1,5 @@
+# Recorded CPU replay / small-head training environment: Python3.12, macOS arm64.
+# No model runner, CUDA stack, MediaPipe or transformers needed for cached replay.
+numpy==2.5.4
+pandas==3.1.1
+torch==2.5.1

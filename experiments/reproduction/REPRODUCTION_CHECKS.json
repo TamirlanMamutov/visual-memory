@@ -1,0 +1,105 @@
+{
+  "snapshot": "2026-11-24T21:18:15.064682-08:00",
+  "official_evaluator_commit": "59460cd5ef605066fdd31a55afa6577d23ab0828",
+  "cached_replay": {
+    "passed": true,
+    "comparisons": 16,
+    "no_video_or_large_model_loaded": true,
+    "validated_handoff_files": 361
+  },
+  "training_replays": {
+    "hand": {
+      "passed": true,
+      "matched_recipes": [
+        "hand_zero_control",
+        "hand_all_lr001",
+        "hand_proximity",
+        "hand_shuffled_control",
+        "hand_all",
+        "stats_lr001",
+        "stats",
+        "hand_proximity_motion",
+        "hand_presence"
+      ],
+      "all_candidate_choices_exact": true,
+      "metrics_tolerance": 1e-10,
+      "group": "hand"
+    },
+    "v10": {
+      "passed": true,
+      "matched_recipes": [
+        "robust_normalization",
+        "lr_0.0003",
+        "lr_0.003",
+        "feature_clip_3",
+        "rank_1",
+        "rank_0.25",
+        "epochs_400",
+        "width_16",
+        "image_shuffled_name",
+        "image_name_features",
+        "wd_0.001",
+        "wd_0.1",
+        "dropout_0.1",
+        "width_4",
+        "seed_risk_1",
+        "relative_pair_features",
+        "image_features",
+        "reference_stats",
+        "overlap_gate_0.2",
+        "epochs_80"
+      ],
+      "all_candidate_choices_exact": true,
+      "metrics_tolerance": 1e-10,
+      "group": "v10"
+    },
+    "v11": {
+      "passed": true,
+      "matched_recipes": [
+        "ap_name_lr003",
+        "corrected_image",
+        "ap_robust",
+        "ap_lr003",
+        "ap_seed_risk",
+        "ap_reference",
+        "ap_source_balanced_lr003",
+        "ap_shuffled_lr003",
+        "corrected_image_name",
+        "ap_epochs400",
+        "corrected_shuffled_name",
+        "reference_stats",
+        "ap_image_lr003",
+        "ap_rank025"
+      ],
+      "all_candidate_choices_exact": true,
+      "metrics_tolerance": 1e-10,
+      "group": "v11"
+    }
+  },
+  "original20": {
+    "passed": true,
+    "stAP25": 0.6233333333333333,
+    "all_reported_metrics_tolerance": 1e-10
+  },
+  "bootstrap": {
+    "all_CIs_exact": true,
+    "draws": 2000,
+    "sources": 25
+  },
+  "raw_hand_subset": {
+    "queries": 2,
+    "all_geometry_verified": true,
+    "maximum_absolute_feature_difference": 0.0
+  },
+  "behavior_tests": 32,
+  "actual_EAGLE_transfer_tested": false,
+  "Windows_CUDA_training_parity_tested": false,
+  "timing_simulation": {
+    "aggregate_metric_means_matched": 396,
+    "tolerance": 1e-10,
+    "classification": "GT-derived simulation only"
+  },
+  "clarification_simulation": {
+    "all_summary_intervals_and_costs_exact": true
+  }
+}

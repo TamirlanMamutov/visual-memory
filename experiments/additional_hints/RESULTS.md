@@ -41,3 +41,58 @@ available from ordinary image queries.
 
 
 These results must remain separate from ordinary image-query box refinement.
+
+## Limited-budget clarification pilot
+
+On the same 31-query development subset, the prediction-only policy requested
+clues for seven queries (25% budget, rounded down). The gate retained the native
+prediction unless a hint-supported alternative also had compatible appearance.
+The following are means over the same 200 **oracle-derived** 5-second-noise draws:
+
+| Method | Clues requested | stAP25 | Recovery |
+|---|---:|---:|---:|
+| Native REN | 0 | 0.4644 | 51.90% |
+| Active requests + conservative gate | 7 | 0.4711 | 53.35% |
+| Same-budget random requests | 7 | 0.4659 | 52.24% |
+| Same-budget random eligible queries | 7 | 0.4694 | 53.05% |
+| Active requests + shuffled clues | 7 | 0.4449 | 50.69% |
+| All clues + conservative gate | 31 | 0.4721 | 53.51% |
+| All clues, ungated fusion | 31 | 0.5761 | 71.82% |
+
+Active requests versus native REN increased mean Top1 by 0.010, with a source-
+bootstrap 95% interval [-0.009, 0.040]. Against random requests the difference was
+0.007 [-0.007, 0.031]. These intervals include zero; they do not establish a benefit
+of the request policy. The conservative gate blocks much of the benefit from
+all-query hints. Earlier-biased clues remain harmful (active-policy stAP25 0.4287).
+
+Six scenario/cohort combinations were checked against the full official evaluator.
+A fresh rerun exactly reproduced all summaries and intervals. The inference gate
+also matched 306 saved simulation choices. These are implementation checks, not
+additional independent examples. Human follow-up results are recorded below.
+
+## First human coarse-timing pilot
+
+One reviewer completed the seven-query page: five clues and two declines, scored
+over the same31-query development cohort. No scope or confidence fields were
+collected by that first interface.
+
+| Method | stAP25 | tAP25 | Recovery | Success |
+|---|---:|---:|---:|---:|
+| Native REN | 0.4644 | 0.6102 | 51.90% | 58.06% |
+| Original gate, human clues as submitted | 0.4416 | 0.5815 | 54.91% | 54.84% |
+
+Three tracks changed: one improved, two worsened. Net recovered frames increased
+by15, but one fewer query passed the Success threshold. This explains why Recovery
+improved while AP fell. A remembered earlier sighting can be truthful and still
+conflict with the task's last annotated appearance.
+
+The separately planned viewing-metadata sensitivity declined the one clue whose
+video was not marked completed: stAP25 0.4651 and Recovery55.31%. Keep the as-
+submitted result primary; a missing completion flag is not proof a clue was wrong.
+
+The new uncertainty policy retains all31 native primary predictions when applied
+to the original file, because scope/confidence were not collected. That is a
+fallback behavior check, not a demonstrated performance gain. Its policy and an
+eight-source follow-up selection are frozen before collecting new human clues.
+The follow-up sources were absent from the first human review, but remain cached
+official-training development examples, not untouched benchmark validation.

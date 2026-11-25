@@ -2,7 +2,7 @@
 
 Only the optional feature-export step loads CLIP or decodes existing local video.
 No EAGLE training/inference or SAM propagation is invoked. Uses the teammate's
-existing FullResReader and variants helpers without modifying their files.
+existing FullResReader; saved SAM variants can also be constructed without models.
 """
 from pathlib import Path
 import sys
@@ -11,7 +11,21 @@ import argparse
 import json
 import random
 import sys
+import copy
 import numpy as np
+
+def sam2_variants(pred,sam):
+    """Same saved-box construction as eagle_sam2.variants; no model import."""
+    track=pred['bboxes'];boxes={int(f):b for f,b in sam.get('boxes',{}).items()}
+    if not track or not boxes:return {name:track for name in ['replace','trim','extend']}
+    rep=[[b[0]]+(boxes[b[0]] if boxes.get(b[0]) else b[1:]) for b in track]
+    seen=[b[0] for b in track if boxes.get(b[0])]
+    trim=[b for b in rep if seen and seen[0]<=b[0]<=seen[-1]] or rep
+    ext=list(rep);f=track[0][0]-1
+    while boxes.get(f):ext.insert(0,[f]+boxes[f]);f-=1
+    f=track[-1][0]+1
+    while boxes.get(f):ext.append([f]+boxes[f]);f+=1
+    return dict(replace=rep,trim=trim,extend=ext)
 
 def annotations(path):
     records=[]
@@ -35,11 +49,17 @@ def choose_records(records,maximum,seed):
             if index<len(grouped[source]):result.append(grouped[source][index])
     return result[:maximum] if maximum else result
 
-def export_pool(record,parts,sam=None,variants=None):
-    key=record['key'];base=parts[0][key];pool=[];seen=set()
-    entries=[('baseline',base['bboxes'])]+[(f'run{i}',p[key]['bboxes']) for i,p in enumerate(parts[1:],1)]
+def export_pool(record,parts,sam=None,variants=None,baseline_variant=None):
+    key=record['key'];original=parts[0][key];base=copy.deepcopy(original);pool=[];seen=set()
+    variants=variants or sam2_variants
+    if baseline_variant:
+        if sam is None or key not in sam:raise ValueError('Final SAM baseline requires saved SAM output for '+key)
+        base['bboxes']=variants(original,sam[key])[baseline_variant]
+    entries=[('baseline',base['bboxes'])]
+    if baseline_variant:entries.append(('pre_sam2_baseline',original['bboxes']))
+    entries += [(f'run{i}',p[key]['bboxes']) for i,p in enumerate(parts[1:],1)]
     if sam is not None:
-        entries += [('sam2_'+name,boxes) for name,boxes in variants(base,sam.get(key,{})).items()]
+        entries += [('sam2_'+name,boxes) for name,boxes in variants(original,sam.get(key,{})).items()]
     for name,boxes in entries:
         identity=tuple(tuple(b) for b in boxes)
         if identity in seen:continue
@@ -53,6 +73,8 @@ def main():
     ap.add_argument('--clips',type=Path,required=True)
     ap.add_argument('--out',type=Path,required=True)
     ap.add_argument('--sam2-dir',type=Path,help='Optional raw SAM2 per-clip output directory from eagle_sam2.py')
+    ap.add_argument('--sam2-baseline-variant',choices=['replace','trim','extend'],help='Use this FINAL saved SAM2 track as the baseline, preserving its refined boxes and time window')
+    ap.add_argument('--baseline-only',action='store_true',help='Export saved tracks/targets without CLIP, video decoding or model imports; for scoring replay only')
     ap.add_argument('--clip-model',help='Existing local CLIP model directory or explicit HF ID; ID may download weights')
     ap.add_argument('--local-files-only',action='store_true')
     ap.add_argument('--device',default='cpu')
@@ -60,11 +82,30 @@ def main():
     ap.add_argument('--seed',type=int,default=230)
     ap.add_argument('--inventory-only',action='store_true',help='Check coverage without decoding or loading models')
     a=ap.parse_args();records=annotations(a.annotations)
-    available=[r for r in records if all((run/'eval_parts'/(r['clip']+'.json')).exists() for run in a.runs)]
+    if a.sam2_baseline_variant and not a.sam2_dir:ap.error('--sam2-baseline-variant requires --sam2-dir')
+    available=[r for r in records if all((run/'eval_parts'/(r['clip']+'.json')).exists() for run in a.runs)
+               and (not a.sam2_baseline_variant or (a.sam2_dir/(r['clip']+'.json')).exists())]
     records=choose_records(available,a.max_queries,a.seed)
     if not records:raise ValueError('No annotated queries have saved files in every supplied run')
     print(f'{len(records)} queries from {len({r["source"] for r in records})} sources selected before scoring; {len(available)} eligible queries total.')
     if a.inventory_only:return
+    if a.baseline_only:
+        queries=[];truth=[];parts_cache={};sam_cache={}
+        for r in records:
+            uid=r['clip'];q=r['query'];vc=q['visual_crop']
+            if uid not in parts_cache:
+                parts_cache[uid]=[json.loads((run/'eval_parts'/(uid+'.json')).read_text()) for run in a.runs]
+                sam_cache[uid]=json.loads((a.sam2_dir/(uid+'.json')).read_text()) if a.sam2_dir else None
+            base,pool=export_pool(r,parts_cache[uid],sam_cache[uid],baseline_variant=a.sam2_baseline_variant)
+            for c in pool:c.update(image_score=0.,name_score=0.,samples=[])
+            queries.append(dict(key=r['key'],source=r['source'],clip_uid=uid,query_frame=int(q['query_frame']),fps=5,score=float(base['score']),baseline_id='baseline',candidates=pool,frame_width=vc['original_width'],frame_height=vc['original_height'],video_path=uid+'.mp4'))
+            truth.append(dict(key=r['key'],bboxes=[[int(b['frame_number']),b['x'],b['y'],b['x']+b['width'],b['y']+b['height']] for b in q['response_track']]))
+        a.out.mkdir(parents=True,exist_ok=True)
+        for name,value in [('bundle.json',dict(version=1,cohort='Saved EAGLE/SAM2 prediction replay; selected annotation cohort',annotation_split='train' if 'train' in a.annotations.stem else 'val' if 'val' in a.annotations.stem else 'unspecified',appearance_features_available=False,baseline_sam2_variant=a.sam2_baseline_variant,queries=queries)),('ground_truth.json',dict(evaluation_only=True,queries=truth))]:
+            path=a.out/name
+            if path.exists() and json.loads(path.read_text())!=value:raise ValueError('Refusing to overwrite different export: '+str(path))
+            path.write_text(json.dumps(value,indent=2)+'\n')
+        print(a.out);return
     if not a.clip_model:ap.error('Feature export requires --clip-model; use --inventory-only for a no-model check')
     root=Path(__file__).resolve().parents[2];sys.path.insert(0,str(root))
     from eagle import data as eagle_data
@@ -78,11 +119,13 @@ def main():
     def encode(images):
         with torch.inference_mode():
             x=processor(images=images,input_data_format='channels_last',return_tensors='pt').to(a.device)
-            return torch.nn.functional.normalize(model.get_image_features(**x),dim=-1).cpu().numpy()
+            pooled=model.vision_model(pixel_values=x['pixel_values'],return_dict=True).pooler_output
+            return torch.nn.functional.normalize(model.visual_projection(pooled),dim=-1).cpu().numpy()
     def text_features(text):
         with torch.inference_mode():
             x=processor(text=[text],return_tensors='pt',truncation=True).to(a.device)
-            return torch.nn.functional.normalize(model.get_text_features(**x),dim=-1).cpu().numpy()[0]
+            pooled=model.text_model(**x,return_dict=True).pooler_output
+            return torch.nn.functional.normalize(model.text_projection(pooled),dim=-1).cpu().numpy()[0]
     from PIL import Image
     queries=[];truth=[];byclip={}
     for r in records:byclip.setdefault(r['clip'],[]).append(r)
@@ -91,7 +134,7 @@ def main():
         sam=json.loads((a.sam2_dir/(uid+'.json')).read_text()) if a.sam2_dir else None
         for r in selected:
             if not all(r['key'] in p for p in parts):raise ValueError('Selected query missing from a run: '+r['key'])
-            base,pool=export_pool(r,parts,sam,variants);q=r['query'];vc=q['visual_crop'];wanted={int(vc['frame_number'])}
+            base,pool=export_pool(r,parts,sam,variants,a.sam2_baseline_variant);q=r['query'];vc=q['visual_crop'];wanted={int(vc['frame_number'])}
             for c in pool:
                 indices=sorted(set(np.linspace(0,len(c['bboxes'])-1,min(3,len(c['bboxes'])),dtype=int))) if c['bboxes'] else []
                 c['sample_boxes']=[c['bboxes'][i] for i in indices];wanted.update(b[0] for b in c['sample_boxes'])
@@ -109,14 +152,14 @@ def main():
                 for c in pool:
                     boxes=c.pop('sample_boxes');vectors=encode([crop(b[0],b[1:]) for b in boxes]) if boxes else np.empty((0,len(query)))
                     mean=vectors.mean(0) if len(vectors) else np.zeros_like(query)
-                    c.update(image_score=float(mean@query),name_score=float(mean@name),
+                    c.update(image_score=float(mean@query),name_score=float(mean@name),appearance_embedding=mean.tolist(),appearance_valid=bool(len(vectors)),
                              samples=[dict(frame=int(b[0]),image_score=float(v@query),name_score=float(v@name)) for b,v in zip(boxes,vectors)])
-                queries.append(dict(key=r['key'],source=r['source'],object=title,query_frame=int(q['query_frame']),fps=5,score=float(base['score']),baseline_id='baseline',candidates=pool,old=False))
+                queries.append(dict(key=r['key'],source=r['source'],clip_uid=uid,object=title,query_frame=int(q['query_frame']),fps=5,score=float(base['score']),baseline_id='baseline',candidates=pool,old=False,frame_width=vc['original_width'],frame_height=vc['original_height'],video_path=uid+'.mp4'))
                 truth.append(dict(key=r['key'],source=r['source'],query_frame=int(q['query_frame']),bboxes=[[int(b['frame_number']),b['x'],b['y'],b['x']+b['width'],b['y']+b['height']] for b in q['response_track']]))
             finally:reader.close()
             print('EXPORTED',len(queries),'/',len(records),flush=True)
     a.out.mkdir(parents=True,exist_ok=True)
-    bundle=dict(version=1,cohort='EAGLE subset; record annotation split and selection in any reported result',coordinate_space='original annotation image pixels',appearance_model=a.clip_model,appearance_revision=getattr(model.config,'_commit_hash',None),queries=queries)
+    bundle=dict(version=1,cohort='EAGLE subset; record annotation split and selection in any reported result',annotation_split='train' if 'train' in a.annotations.stem else 'val' if 'val' in a.annotations.stem else 'unspecified',coordinate_space='original annotation image pixels',appearance_model=a.clip_model,appearance_revision=getattr(model.config,'_commit_hash',None),baseline_sam2_variant=a.sam2_baseline_variant,appearance_features_available=True,queries=queries)
     for filename,data in [('bundle.json',bundle),('ground_truth.json',dict(evaluation_only=True,queries=truth))]:
         path=a.out/filename
         if path.exists() and json.loads(path.read_text())!=data:raise ValueError('Refusing to replace different export: '+str(path))

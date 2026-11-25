@@ -5,6 +5,13 @@ unchanged-baseline export and official scoring. Experiment-specific algorithms l
 in [additional_hints](../additional_hints/README.md) and
 [box_refinement](../box_refinement/README.md).
 
+For the complete private-artifact handoff, training replay, final50-query results
+and priorities, start with [reproduction/README.md](../reproduction/README.md).
+For the teammate's **final run6 with SAM extension**, use
+[EAGLE_TRANSFER.md](../reproduction/EAGLE_TRANSFER.md): specify
+`--sam2-baseline-variant extend` as well as `--sam2-dir`. The commands below
+otherwise use the first run's pre-SAM `eval_parts` as baseline.
+
 ## Quick start for the teammate's EAGLE runs
 
 Run these commands from the repository root in the **existing project Python
@@ -38,7 +45,9 @@ existing **local model directory** and `--local-files-only`. CPU is the default;
 
 If already computed, append
 `--sam2-dir output/ens3-mask0/sam2/small-m30` to include saved SAM 2 replace/trim/extend
-tracks. This reuses `eagle_sam2.variants`; it does not propagate SAM again.
+tracks. This reconstructs the saved `eagle_sam2.variants` boxes without propagating
+SAM again. Add `--sam2-baseline-variant extend` to make the final extended track
+the baseline; otherwise the original pre-SAM track remains the baseline.
 
 The exporter uses the repository's `FullResReader`, annotation frame numbers at
 5 FPS, and original annotation pixel coordinates. It encodes the reference crop

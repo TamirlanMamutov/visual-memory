@@ -1,0 +1,31 @@
+{
+  "snapshot": "2026-11-24T21:18:15.064682-08:00",
+  "branch": "codex/ren-reproducible-experiments-20261124",
+  "teammate_summary_commit": "be70872c05353f000cda15726bf5e9fb3788f225",
+  "reserved_validation": {
+    "status": "complete",
+    "queries": 50,
+    "planned_queries": 50,
+    "source_videos": 25,
+    "model_changed_after_validation_started": false,
+    "bootstrap_draws": 2000
+  },
+  "running_experiment_workers": [],
+  "sleep_prevention": "Original validation queue and its caffeinate process exited after completion; no new sleep prevention added",
+  "completed": [
+    "Frozen REN validation50",
+    "Portable cached replay16 comparisons",
+    "Hand/control source-CV9 recipes",
+    "v10 source-CV20 recipes",
+    "v11 source-CV14 recipes",
+    "Original20 quality-head reproduction",
+    "Raw hand extraction2-query parity check"
+  ],
+  "pending": [
+    "Receive teammate EAGLE saved eval_parts and final SAM outputs/checkpoints",
+    "EAGLE+SAM window-preserving box-refinement transfer",
+    "New confidence/scope-annotated human clue study",
+    "Independent natural descriptions and recorded-speech study"
+  ],
+  "queued_new_full_validation": false
+}

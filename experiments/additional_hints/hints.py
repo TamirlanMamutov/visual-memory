@@ -44,3 +44,21 @@ def timing_rank(query, hint, weight=.05, use_description=False, prior=None, reli
                                            np.log(1-reliability)+prior[candidate['id']]))
         scores.append((appearance+weight*time_score, candidate['id']==query['baseline_id'], -index, candidate['id']))
     return [item[-1] for item in sorted(scores, reverse=True)]
+
+
+def native_gated_choice(query,hint):
+    """Conservative fixed gate used by the clarification pilot; no labels read."""
+    validate_query(query)
+    if hint.get('declined',False):
+        return query['baseline_id'],dict(reason='user_declined',changed=False)
+    best_id=timing_rank(query,hint)[0]
+    base=next(c for c in query['candidates'] if c['id']==query['baseline_id'])
+    best=next(c for c in query['candidates'] if c['id']==best_id)
+    if best_id==query['baseline_id']:
+        return best_id,dict(reason='native_is_winner',changed=False)
+    duration=(query['query_frame']-1)/query.get('fps',5)
+    a=temporal_log_density(best,query.get('fps',5),hint,duration)
+    b=temporal_log_density(base,query.get('fps',5),hint,duration)
+    allow=(best['image_score']>=base['image_score']-.025 and a>b+np.log(3.)
+           and best['image_score']+.05*a>base['image_score']+.05*b+.025)
+    return (best_id if allow else query['baseline_id']),dict(reason='gate_passed' if allow else 'gate_retained_native',changed=bool(allow))

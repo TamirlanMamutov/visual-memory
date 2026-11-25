@@ -6,6 +6,7 @@ information. It may select a different time interval. It does not redraw boxes.
 - Real hints: independently supplied approximate time or early/middle/late clue.
 - Simulated hints: explicitly GT-derived feasibility inputs, not real-user results.
 - [Recorded hint results](RESULTS.md) and [aggregate numbers](results/ren_hint_simulation.json).
+- [Limited-budget clarification results](results/ren_clarification_simulation.json).
 
 First prepare a candidate bundle with the [shared tools](../candidate_tools/README.md).
 No model, video or GT file is loaded by the real-hint inference command.
@@ -93,3 +94,88 @@ python experiments/candidate_tools/evaluate.py --bundle output/eagle-context-pil
 Compare with the exact same bundle's unchanged baseline. Keep simulated-hint
 results separate from ordinary image-query and real-user tables. After a code
 upgrade, use a fresh simulation output folder; existing frozen hashes are retained.
+
+## Request hints only for ambiguous predictions
+
+The clarification pilot asks for clues on a limited subset, while retaining the
+unchanged native prediction elsewhere. Request selection uses candidate appearance
+scores and temporal disagreement, without labels or supplied clues.
+
+```text
+python experiments/additional_hints/clarification.py --bundle output/pilot/bundle.json --budget .25 --requests-only --out output/pilot/requests.json
+```
+
+Use one entry for each requested key, including explicit declines. Independently
+write clues about the **last remembered sighting**; do not consult GT response
+timestamps, target boxes, or model predictions. An example file is:
+
+```json
+{"provenance":"independent_human_recall","queries":[
+  {"key":"requested_key_1","kind":"third","value":"late"},
+  {"key":"requested_key_2","declined":true}
+]}
+```
+
+```text
+python experiments/additional_hints/clarification.py --bundle output/pilot/bundle.json --budget .25 --real-hints output/pilot/human_clues.json --out output/pilot/clarified.json
+```
+
+This command reads no GT. It requires exact requested-key coverage, keeps native
+predictions for unrequested or declined queries, and applies the fixed conservative
+gate to the others. Overrides need compatible appearance and stronger temporal
+support. AP confidence is unchanged. Score the output using `candidate_tools/evaluate.py`
+as above, against the same bundle's unchanged baseline.
+
+For an explicitly oracle-derived budget simulation, reuse a completed `simulate.py`
+output containing `rankings.npz` and `SIMULATED_INPUTS.npz`:
+
+```text
+python experiments/additional_hints/clarification.py --bundle output/pilot/bundle.json --simulation-dir output/pilot/simulation --truth output/pilot/ground_truth.json --evaluator-root ../VQLoC --out output/pilot/clarification_simulation
+```
+
+The 10%, 25%, and 50% budgets round down and are capped by eligible queries. Random
+controls request exactly the same number of clues. These simulation results are
+separate from real-human performance; see [results](RESULTS.md).
+
+## Fallible human clues and ranked alternatives
+
+The separate `uncertain.py` policy distinguishes a **remembered sighting** from an
+**estimate of the actual last sighting**. Earlier memories need not identify the
+benchmark's final response track. Do not silently interpret them as that answer.
+
+Add explicit scope and self-reported confidence to each supplied clue:
+
+```json
+{"key":"query_key","kind":"third","value":"middle",
+ "scope":"remembered_sighting","confidence":"medium"}
+```
+
+Supported scopes are `remembered_sighting`, `latest_estimate`, and `unknown`;
+confidence categories are `low`, `medium`, `high`, and `unknown`. Declines still
+use `{"key":"query_key","declined":true}`. Missing fields stay unknown; they
+are never inferred from whether an old response matched GT.
+
+```text
+python experiments/additional_hints/uncertain.py --bundle output/pilot/bundle.json --hints output/pilot/human_clues.json --out output/pilot/uncertain.json
+```
+
+The primary answer remains native for remembered/unknown-scope clues and for
+missing, low, or medium confidence. Only an explicit high-confidence last-sighting
+estimate can override it, after fixed appearance and mixed temporal-support gates.
+Remembered-sighting support is one-sided: it allows later episodes. All support is
+mixed with uniform history density, using fixed heuristic weights 0.2/0.5/0.8 for
+low/medium/high confidence (unknown uses 0.2). These are not calibrated reliability
+probabilities. High-confidence mistakes can still cause harmful changes.
+
+Outputs include the primary track, a full candidate ranking, a top-two shortlist,
+and a decision reason. Scores are ranking scores, not correctness probabilities.
+Score primary answers using the official evaluator; report shortlist coverage
+separately against a native-plus-image-alternative control with the same list size.
+Displaying a correct alternative is not evidence the system or user selected it.
+
+`review.template.html` is a static annotation template. Replace the
+`__REVIEW_MANIFEST__` placeholder with JSON containing `protocol_id` and a
+`queries` list of `{key,ordinal,object,reference,history_clip,history_seconds}`.
+Only query-reference crops and pre-query history belong in the review page; keep
+GT answers and candidate predictions out. Freeze the policy before collecting new
+clues. Preserve the original clue file, including declines and viewing metadata.

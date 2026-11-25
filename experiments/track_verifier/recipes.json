@@ -1,0 +1,7 @@
+{
+  "head_configs": [
+    {"name":"stats","features":"stats","lr":0.003,"source_balance":true,"selector":"AP","matched_init":true},
+    {"name":"image","features":"image","lr":0.003,"source_balance":true,"selector":"AP","matched_init":true},
+    {"name":"name","features":"name","lr":0.003,"source_balance":true,"selector":"AP","matched_init":true}
+  ]
+}

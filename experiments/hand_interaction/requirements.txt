@@ -1,0 +1,6 @@
+# Optional extraction environment used for completed hand study (Python3.12).
+# Cached hand-feature training uses only reproduction/requirements-cached.txt.
+mediapipe==0.10.32
+numpy==2.5.5
+Pillow==13.0.0
+opencv-contrib-python==5.1.0.95

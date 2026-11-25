@@ -1,0 +1,10 @@
+{
+  "filename": "ren_handoff_v1.zip",
+  "bytes": 2341048,
+  "sha256": "4385c4a1692a70ab62ebf71ee06a38874f194651a4140de6cc9714b9bcd34156",
+  "manifest_files": 361,
+  "closed_validation_queries": 50,
+  "private_delivery_required": true,
+  "uploaded": false,
+  "contents": "Cached training/evaluation inputs, separate targets, small verifier heads, limited reference crops; no raw videos, large upstream weights or credentials"
+}
