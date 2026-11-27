@@ -245,8 +245,8 @@ class Launcher:
         outer = ttk.Frame(root, padding=18)
         outer.pack(fill='both', expand=True)
         ttk.Label(outer, text='CS230 experiment launcher', style='Title.TLabel').pack(anchor='w')
-        ttk.Label(outer, text=f'Python (baseline tools): {PYTHON}    ·    Python (GPU training): {TRAIN_PYTHON}', style='Sub.TLabel').pack(anchor='w', pady=(2, 0))
-        ttk.Label(outer, textvariable=self.data_status, style='Sub.TLabel').pack(anchor='w', pady=(0, 8))
+        self.note(outer, f'Python (baseline tools): {PYTHON}    ·    Python (GPU training): {TRAIN_PYTHON}', pady=(2, 0))
+        self.note(outer, textvariable=self.data_status, pady=(0, 8))
         tabs = ttk.Notebook(outer)
         tabs.pack(fill='x')
         self.build_tempret(tabs)
@@ -276,8 +276,8 @@ class Launcher:
         self.table.pack(fill='x')
         self.table.bind('<Double-1>', self.open_selected_run)
         foot = ttk.Frame(results); foot.pack(fill='x')
-        ttk.Label(foot, textvariable=self.dataset_status, style='Sub.TLabel', wraplength=1000).pack(side='left', pady=(4, 0))
         ttk.Button(foot, text='Refresh', command=self.refresh).pack(side='right', pady=(4, 0))
+        self.note(foot, textvariable=self.dataset_status, side='left', fill='x', expand=True, pady=(4, 0))
         logbox = ttk.LabelFrame(outer, text='Live output', padding=6)
         logbox.pack(fill='both', expand=True, pady=(8, 0))
         self.log = tk.Text(logbox, height=8, bg='#132133', fg='#d6e6f5', insertbackground='white', font=('Consolas', 10), wrap='word', state='disabled')
@@ -285,10 +285,33 @@ class Launcher:
         self.log.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right', fill='y'); self.log.pack(fill='both', expand=True)
         self.refresh()
+        self.fit_to_screen()
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.after(400, self.poll)
 
+    def fit_to_screen(self):
+        """Size the window to its content, capped by the screen, so the live
+        output panel is visible at any display scaling."""
+        self.root.update_idletasks()
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        avail_w, avail_h = sw - 40, sh - 90  # leave room for the taskbar and title bar
+        if self.root.winfo_reqheight() > avail_h:  # short screen: shrink the two lists
+            self.table.configure(height=4); self.log.configure(height=5)
+            self.root.update_idletasks()
+        scale = float(self.root.tk.call('tk', 'scaling')) / (96 / 72)
+        w = min(max(int(1280 * scale), self.root.winfo_reqwidth()), avail_w)
+        h = min(self.root.winfo_reqheight() + 20, avail_h)
+        self.root.geometry(f'{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (avail_h - h) // 2)}')
+        self.root.minsize(min(int(900 * scale), avail_w), min(int(640 * scale), avail_h))
+
     # ------------------------------------------------------------ tabs ----
+    def note(self, parent, text='', textvariable=None, side=None, fill='x', expand=False, **pack):
+        """Grey hint text that wraps to the width it is given."""
+        label = ttk.Label(parent, text=text, textvariable=textvariable, style='Sub.TLabel', justify='left')
+        label.pack(side=side, fill=fill, expand=expand, anchor='w', **pack)
+        label.bind('<Configure>', lambda e: label.configure(wraplength=max(200, e.width - 4)))
+        return label
+
     def form(self, parent, fields, vars_):
         grid = ttk.Frame(parent); grid.pack(fill='x', pady=(0, 6))
         for i, (key, label, widget, extra) in enumerate(fields):
@@ -307,14 +330,37 @@ class Launcher:
             ttk.Checkbutton(line, text=label, variable=vars_[key]).pack(side='left', padx=(0, 16))
 
     def buttons(self, parent, items):
+        """A row of action buttons that wraps onto further lines when narrow."""
         line = ttk.Frame(parent); line.pack(fill='x')
+        row = []
         for text, action in items:
             b = ttk.Button(line, text=text, command=action if callable(action) else (lambda a=action: self.start(a)))
-            b.pack(side='left', padx=(0, 6)); self.action_buttons.append(b)
+            row.append(b); self.action_buttons.append(b)
+        state = {'width': None, 'rows': []}
+
+        def reflow(width):
+            if width == state['width']:
+                return
+            state['width'] = width
+            for b in row:
+                b.pack_forget()
+            for f in state['rows']:
+                f.destroy()
+            state['rows'] = []
+            used = width + 1  # forces a new line for the first button
+            for b in row:
+                need = b.winfo_reqwidth() + 6
+                if used + need > width:
+                    f = ttk.Frame(line); f.pack(fill='x', pady=(0, 4)); state['rows'].append(f); used = 0
+                b.pack(in_=state['rows'][-1], side='left', padx=(0, 6)); b.lift(state['rows'][-1])
+                used += need
+
+        line.bind('<Configure>', lambda e: reflow(e.width))
+        reflow(10 ** 6)
 
     def build_tempret(self, tabs):
         tab = ttk.Frame(tabs, padding=12); tabs.add(tab, text='TempRet · EK-100 retrieval')
-        ttk.Label(tab, text='CLIP dual encoder + temporal transformer, SMS loss, ITM cross-encoder reranking (arXiv 2605.24470).', style='Sub.TLabel').pack(anchor='w', pady=(0, 6))
+        self.note(tab, 'CLIP dual encoder + temporal transformer, SMS loss, ITM cross-encoder reranking (arXiv 2605.24470).', pady=(0, 6))
         self.form(tab, [
             ('mode', 'Mode', 'combo', ['frozen', 'full']), ('backbone', 'CLIP backbone', 'combo', ['ViT-L-14', 'ViT-B-16', 'ViT-B-32']),
             ('epochs', 'Epochs', 'entry', None), ('batch', 'Batch size', 'entry', None),
@@ -327,12 +373,12 @@ class Launcher:
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('TempRet evaluate checkpoint', 'tempret')),
                            ('Continue from checkpoint…', lambda: self.with_checkpoint('TempRet continue training', 'tempret')),
                            ('Train reranker on checkpoint…', lambda: self.with_checkpoint('TempRet train reranker only', 'tempret'))])
-        ttk.Label(tab, text='frozen = cached CLIP image features (fits a 12 GB GPU); full = end-to-end like the paper (needs much more memory; use ViT-B-16 and a small batch).\n'
-                  'Evaluation uses only locally available videos and is labelled “subset” unless all 9,668 test clips are present.', style='Sub.TLabel').pack(anchor='w', pady=(8, 0))
+        self.note(tab, 'frozen = cached CLIP image features (fits a 12 GB GPU); full = end-to-end like the paper (needs much more memory; use ViT-B-16 and a small batch).\n'
+                  'Evaluation uses only locally available videos and is labelled “subset” unless all 9,668 test clips are present.', pady=(8, 0))
 
     def build_eagle(self, tabs):
         tab = ttk.Frame(tabs, padding=12); tabs.add(tab, text='EAGLE · Ego4D VQ2D')
-        ttk.Label(tab, text='DINOv2 backbone, appearance memory (AMM) + geometry memory (GLM), SAM pseudo-masks (arXiv 2511.08007, 2D branch).', style='Sub.TLabel').pack(anchor='w', pady=(0, 6))
+        self.note(tab, 'DINOv2 backbone, appearance memory (AMM) + geometry memory (GLM), SAM pseudo-masks (arXiv 2511.08007, 2D branch).', pady=(0, 6))
         self.form(tab, [
             ('iters', 'Iterations', 'entry', None), ('batch', 'Batch (sequences)', 'entry', None),
             ('lr', 'Peak learning rate', 'entry', None), ('seq', 'Frames / sequence', 'entry', None),
@@ -344,8 +390,8 @@ class Launcher:
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('EAGLE evaluate checkpoint', 'eagle')),
                            ('Continue from checkpoint…', lambda: self.with_checkpoint('EAGLE continue training', 'eagle')),
                            ('Resume interrupted run…', lambda: self.with_run_dir('EAGLE resume interrupted run', 'eagle-'))])
-        ttk.Label(tab, text='Uses VQ2D clips in ../Ego4D/v2/clips and VISOR in ../EPIC-KITCHENS-VISOR when present. Prepare is resumable: rerun it after more clips download.\n'
-                  'Evaluation searches every frame before the query frame (5 fps) and scores with the official VQ2D metrics from ../VQLoC.', style='Sub.TLabel').pack(anchor='w', pady=(8, 0))
+        self.note(tab, 'Uses VQ2D clips in ../Ego4D/v2/clips and VISOR in ../EPIC-KITCHENS-VISOR when present. Prepare is resumable: rerun it after more clips download.\n'
+                  'Evaluation searches every frame before the query frame (5 fps) and scores with the official VQ2D metrics from ../VQLoC.', pady=(8, 0))
 
     def build_jpose(self, tabs):
         tab = ttk.Frame(tabs, padding=12); tabs.add(tab, text='EPIC · JPoSE baseline')
@@ -355,14 +401,14 @@ class Launcher:
         self.buttons(tab, [('Evaluate pretrained model', 'EPIC pretrained evaluation'),
                            ('Train from scratch + validate', 'EPIC training and validation'),
                            ('Export retrieval errors', 'EPIC retrieval error analysis')])
-        ttk.Label(tab, text='Joint-Part-of-Speech-Embeddings on the supplied features. Matches the repository README evaluation (nDCG 0.690, mAP 0.734).', style='Sub.TLabel').pack(anchor='w', pady=(8, 0))
+        self.note(tab, 'Joint-Part-of-Speech-Embeddings on the supplied features. Matches the repository README evaluation (nDCG 0.690, mAP 0.734).', pady=(8, 0))
 
     def build_egoexo(self, tabs):
         tab = ttk.Frame(tabs, padding=12); tabs.add(tab, text='Ego-Exo4D · data review')
         self.buttons(tab, [('Check videos & pose annotations', 'Ego-Exo4D dataset check'),
                            ('Prepare 10-video query review', 'Ego-Exo4D prepare query review'),
                            ('Open query review / label objects', self.open_review)])
-        ttk.Label(tab, text='No object-localization scores here; query boxes, response tracks and model inference are still required.', style='Sub.TLabel').pack(anchor='w', pady=(8, 0))
+        self.note(tab, 'No object-localization scores here; query boxes, response tracks and model inference are still required.', pady=(8, 0))
 
     # --------------------------------------------------------- actions ----
     def options(self, vars_):
