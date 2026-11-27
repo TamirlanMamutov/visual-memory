@@ -469,7 +469,8 @@ def main():
         log('VQ2D metrics:', json.dumps(metrics))
         pred_json = {k: [b.to_json() for b in v.bboxes] + [{'score': v.score}] for k, v in preds.items()}
         atomic_write(out / 'predictions.json', lambda f: f.write(json.dumps(pred_json).encode('utf-8')))
-        write_json(out / 'metrics.json', dict(final=metrics, checkpoint=checkpoint, split=args.eval_split))
+        write_json(out / 'metrics.json', dict(final=metrics, checkpoint=checkpoint, split=args.eval_split,
+                                                    pairing='all'))   # official all-queries setting (eagle/infer.py)
     (out / 'COMPLETE').write_text('done\n')
 
 

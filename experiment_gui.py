@@ -170,10 +170,13 @@ def saved_metrics():
                 rows.append((run.name, f"TempRet {desc} [epoch {h['epoch']} of {cfg.get('epochs', '?')}, {state}]",
                              f"mAP {h['mAP_AVG']:.2f} · nDCG {h['nDCG_AVG']:.2f} (dual, {scope})"))
     for run in (HERE / 'output').glob('eagle-*'):
-        res = _load(run / 'metrics.json')
+        # metrics.json written before the official all-queries scorer has no 'pairing' and was scored
+        # large-only; eagle_rescore.py writes the official score to metrics_official.json.
+        res = _load(run / 'metrics_official.json') or _load(run / 'metrics.json')
         if res and res.get('final'):
             m = res['final']
-            rows.append((run.name, f"EAGLE [{res.get('split', 'val')}, {m.get('queries', '?')} queries]",
+            scope = f"{m.get('queries', '?')} queries" if res.get('pairing') == 'all' else 'old large-only scorer; run eagle_rescore.py'
+            rows.append((run.name, f"EAGLE [{res.get('split', 'val')}, {scope}]",
                          f"tAP25 {m.get('tAP25', 0):.3f} · stAP25 {m.get('stAP25', 0):.3f} · Rec {m.get('Rec', 0):.2f} · Succ {m.get('Succ', 0):.2f}"))
         elif (run / 'history.jsonl').exists():
             lines = (run / 'history.jsonl').read_text().splitlines()
