@@ -389,7 +389,9 @@ class Launcher:
                            ('Prepare + train + evaluate', 'EAGLE prepare + train + evaluate'),
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('EAGLE evaluate checkpoint', 'eagle')),
                            ('Continue from checkpoint…', lambda: self.with_checkpoint('EAGLE continue training', 'eagle')),
-                           ('Resume interrupted run…', lambda: self.with_run_dir('EAGLE resume interrupted run', 'eagle-'))])
+                           ('Resume interrupted run…', lambda: self.with_run_dir('EAGLE resume interrupted run', 'eagle-')),
+                           ('Evaluation demo…', self.open_demo)])
+        self.action_buttons.pop()   # the demo only reads saved results, so it stays usable during a run
         self.note(tab, 'Uses VQ2D clips in ../Ego4D/v2/clips and VISOR in ../EPIC-KITCHENS-VISOR when present. Prepare is resumable: rerun it after more clips download.\n'
                   'Evaluation searches every frame before the query frame (5 fps) and scores with the official VQ2D metrics from ../VQLoC.', pady=(8, 0))
 
@@ -555,10 +557,238 @@ class Launcher:
     def copy_command(self):
         self.root.clipboard_clear(); self.root.clipboard_append(self.command.get()); self.root.update()
 
+    def open_demo(self):
+        if getattr(self, 'demo', None) and self.demo.win.winfo_exists():
+            self.demo.win.deiconify(); self.demo.win.lift(); return
+        if not demo_runs():
+            messagebox.showinfo('Evaluation demo', 'No EAGLE run with saved evaluation predictions in output/ yet.'); return
+        self.demo = EvalDemo(self.root)
+
     def close(self):
         if self.busy and not messagebox.askyesno('Close launcher', 'Stop the active run and close the launcher?'):
             return
+        if getattr(self, 'demo', None):
+            self.demo.close()
         self.stop(); self.root.destroy()
+
+
+# ------------------------------------------------------- evaluation demo ----
+
+def demo_runs():
+    """EAGLE run folders with saved per-query predictions, newest first."""
+    runs = [p for p in (HERE / 'output').glob('eagle-*') if p.is_dir()
+            and ((p / 'predictions.json').exists() or any(p.glob('eval_parts/*-*.json')))]
+    return sorted(runs, key=lambda p: p.name, reverse=True)
+
+
+def demo_label(run):
+    m = _load(run / 'metrics.json').get('final', {}) if (run / 'metrics.json').exists() else {}
+    state = '' if (run / 'COMPLETE').exists() else '  (evaluation running or stopped)'
+    return f'{run.name}  ·  {m["queries"]} queries{state}' if m.get('queries') else f'{run.name}{state}'
+
+
+class EvalDemo:
+    """Window for browsing one EAGLE evaluation query by query. Frames are decoded and drawn by
+    `eagle_demo.py --serve`, running in the GPU environment (needs PyAV, OpenCV, Pillow, no GPU)."""
+    FILTERS = ('All queries', 'Found (stIoU ≥ 0.05)', 'Missed', 'No prediction')
+
+    def __init__(self, master):
+        self.win = tk.Toplevel(master)
+        self.win.title('EAGLE evaluation demo · Ego4D VQ2D')
+        self.runs = demo_runs()
+        self.rows, self.photo, self.proc = [], None, None
+        self.replies, self.next_id, self.inflight, self.queue = queue.Queue(), 0, None, []
+        self.sort_key, self.sort_rev = 'key', False
+        self.run_var = tk.StringVar(value=demo_label(self.runs[0]))
+        self.filter_var = tk.StringVar(value=self.FILTERS[0])
+        self.search_var = tk.StringVar()
+        self.summary = tk.StringVar(value='')
+        self.status = tk.StringVar(value='Starting the demo backend…')
+
+        outer = ttk.Frame(self.win, padding=10); outer.pack(fill='both', expand=True)
+        top = ttk.Frame(outer); top.pack(fill='x')
+        ttk.Label(top, text='Run').pack(side='left')
+        run_box = ttk.Combobox(top, textvariable=self.run_var, values=[demo_label(r) for r in self.runs], state='readonly', width=58)
+        run_box.pack(side='left', padx=(6, 14)); run_box.bind('<<ComboboxSelected>>', lambda e: self.load_run())
+        ttk.Label(top, text='Show').pack(side='left')
+        f = ttk.Combobox(top, textvariable=self.filter_var, values=self.FILTERS, state='readonly', width=20)
+        f.pack(side='left', padx=(6, 14)); f.bind('<<ComboboxSelected>>', lambda e: self.fill())
+        ttk.Label(top, text='Object').pack(side='left')
+        e = ttk.Entry(top, textvariable=self.search_var, width=18); e.pack(side='left', padx=(6, 14))
+        self.search_var.trace_add('write', lambda *a: self.fill())
+        ttk.Button(top, text='Random query', command=self.random_query).pack(side='left')
+        ttk.Button(top, text='Open image', command=self.open_image).pack(side='left', padx=(6, 0))
+        ttk.Label(outer, textvariable=self.summary, style='Sub.TLabel').pack(anchor='w', pady=(6, 4))
+
+        body = ttk.PanedWindow(outer, orient='horizontal'); body.pack(fill='both', expand=True)
+        left = ttk.Frame(body); body.add(left, weight=0)
+        cols = (('object', 'Object', 150), ('result', 'Result', 80), ('stiou', 'stIoU', 60), ('tiou', 'tIoU', 60), ('score', 'Score', 60))
+        self.tree = ttk.Treeview(left, columns=[c[0] for c in cols], show='headings', selectmode='browse')
+        for key, label, width in cols:
+            self.tree.heading(key, text=label, command=lambda k=key: self.sort_by(k))
+            self.tree.column(key, width=width, stretch=key == 'object', anchor='w' if key in ('object', 'result') else 'e')
+        ys = ttk.Scrollbar(left, command=self.tree.yview); self.tree.configure(yscrollcommand=ys.set)
+        ys.pack(side='right', fill='y'); self.tree.pack(fill='both', expand=True)
+        self.tree.bind('<<TreeviewSelect>>', lambda e: self.show_selected())
+        right = ttk.Frame(body); body.add(right, weight=1)
+        self.canvas = tk.Canvas(right, background='#f6f7f9', highlightthickness=0)
+        cx = ttk.Scrollbar(right, orient='horizontal', command=self.canvas.xview)
+        cy = ttk.Scrollbar(right, command=self.canvas.yview)
+        self.canvas.configure(xscrollcommand=cx.set, yscrollcommand=cy.set)
+        cy.pack(side='right', fill='y'); cx.pack(side='bottom', fill='x'); self.canvas.pack(fill='both', expand=True)
+        self.canvas.bind('<MouseWheel>', lambda e: self.canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units'))
+        ttk.Label(outer, textvariable=self.status, style='Sub.TLabel').pack(anchor='w', pady=(6, 0))
+        ttk.Label(outer, text='Per-query tIoU / stIoU / success use the official VQ2D definitions (../VQLoC/metrics); '
+                  'the share of "found" queries equals the official Success @ 0.05.', style='Sub.TLabel').pack(anchor='w')
+
+        scale = float(self.win.tk.call('tk', 'scaling')) / (96 / 72)
+        sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
+        w, h = min(int(1900 * scale), sw - 40), min(int(1180 * scale), sh - 90)
+        self.win.geometry(f'{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - 90 - h) // 2)}')
+        self.win.protocol('WM_DELETE_WINDOW', self.close)
+        self.start_backend()
+        self.load_run()
+        self.win.after(100, self.poll)
+
+    # backend: one JSON request per line, one 'DEMO {...}' reply per line
+    def start_backend(self):
+        logs = HERE / 'output' / 'launcher-logs'; logs.mkdir(parents=True, exist_ok=True)
+        self.errlog = (logs / (time.strftime('%Y%m%d-%H%M%S') + '-eval-demo.log')).open('w', encoding='utf-8')
+        env = os.environ.copy(); env['PYTHONDONTWRITEBYTECODE'] = '1'; env['PYTHONIOENCODING'] = 'utf-8'
+        self.proc = subprocess.Popen([TRAIN_PYTHON, '-u', './eagle_demo.py', '--serve'], cwd=HERE, env=env,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errlog,
+                                     text=True, encoding='utf-8', errors='replace',
+                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        def read():
+            for line in self.proc.stdout:
+                if line.startswith('DEMO '):
+                    self.replies.put(json.loads(line[5:]))
+            self.replies.put(dict(dead=True))
+        threading.Thread(target=read, daemon=True).start()
+
+    def request(self, **req):
+        if req['op'] == 'render':                 # only the latest selection matters
+            self.queue = [q for q in self.queue if q['op'] != 'render']
+        self.queue.append(req); self.pump()
+
+    def pump(self):
+        if self.inflight is not None or not self.queue or self.proc is None or self.proc.poll() is not None:
+            return
+        req = self.queue.pop(0); self.next_id += 1; req['id'] = self.next_id; self.inflight = req
+        try:
+            self.proc.stdin.write(json.dumps(req) + '\n'); self.proc.stdin.flush()
+        except OSError:
+            self.inflight = None
+
+    def poll(self):
+        if not self.win.winfo_exists():
+            return
+        try:
+            while True:
+                self.on_reply(self.replies.get_nowait())
+        except queue.Empty:
+            pass
+        self.win.after(100, self.poll)
+
+    def on_reply(self, r):
+        if r.get('dead'):
+            self.status.set(f'Demo backend stopped; see {Path(self.errlog.name).name} in output/launcher-logs.'); return
+        if r.get('ready'):
+            return
+        req, self.inflight = self.inflight, None
+        if r.get('error'):
+            self.status.set(f'Error: {r["error"]}')
+        elif 'index' in r:
+            self.set_index(json.loads(Path(r['index']).read_text(encoding='utf-8')))
+        elif 'png' in r and req and req.get('key') == self.selected():
+            self.show_png(r['png'], r['stats'])
+        self.pump()
+
+    # run and query list
+    def current_run(self):
+        names = [demo_label(r) for r in self.runs]
+        return self.runs[names.index(self.run_var.get())] if self.run_var.get() in names else self.runs[0]
+
+    def load_run(self):
+        run = self.current_run()
+        self.rows = []; self.fill(); self.canvas.delete('all'); self.summary.set('')
+        cache = HERE / 'output' / 'eval-demo' / f'{run.name}-index.json'
+        newest = max((p.stat().st_mtime for p in [run / 'predictions.json', run / 'eval_parts'] if p.exists()), default=0)
+        if (run / 'COMPLETE').exists() and cache.exists() and cache.stat().st_mtime > newest:
+            self.set_index(json.loads(cache.read_text(encoding='utf-8')))
+        else:
+            self.status.set(f'Scoring every query of {run.name} (about 10 s)…')
+            self.request(op='index', run=f'output/{run.name}')
+
+    def set_index(self, index):
+        if index['summary']['run'] != self.current_run().name:
+            return
+        self.rows = index['rows']; s = index['summary']
+        self.summary.set(f'{s["queries"]} {s["split"]} queries  ·  found {s["success"]:.2f}% (official Success)  ·  '
+                         f'mean tIoU {s["mean_tiou"]:.3f}  ·  mean stIoU {s["mean_stiou"]:.3f}')
+        self.status.set('Select a query to see its crop, score timeline and frames.')
+        self.fill()
+        if self.tree.get_children():
+            first = self.tree.get_children()[0]; self.tree.selection_set(first); self.tree.see(first)
+
+    def visible_rows(self):
+        f, q = self.FILTERS.index(self.filter_var.get()), self.search_var.get().strip().lower()
+        keep = [lambda r: True, lambda r: r['success'], lambda r: not r['success'] and r['pred_span'], lambda r: not r['pred_span']][f]
+        rows = [r for r in self.rows if keep(r) and q in (r['object'] or '').lower()]
+        key = {'object': lambda r: (r['object'] or '').lower(), 'result': lambda r: r['success']}.get(self.sort_key, lambda r: r[self.sort_key])
+        return sorted(rows, key=key, reverse=self.sort_rev)
+
+    def fill(self):
+        keep = self.selected()
+        self.tree.delete(*self.tree.get_children())
+        for r in self.visible_rows():
+            result = 'found' if r['success'] else ('missed' if r['pred_span'] else 'no pred.')
+            self.tree.insert('', 'end', iid=r['key'], values=(r['object'] or '—', result, f'{r["stiou"]:.3f}', f'{r["tiou"]:.3f}', f'{r["score"]:.3f}'))
+        if keep and self.tree.exists(keep):
+            self.tree.selection_set(keep); self.tree.see(keep)
+
+    def sort_by(self, key):
+        self.sort_rev = not self.sort_rev if self.sort_key == key else key in ('stiou', 'tiou', 'score')
+        self.sort_key = key; self.fill()
+
+    def selected(self):
+        sel = self.tree.selection() if self.win.winfo_exists() else ()
+        return sel[0] if sel else None
+
+    def random_query(self):
+        items = self.tree.get_children()
+        if items:
+            import random
+            k = random.choice(items); self.tree.selection_set(k); self.tree.see(k)
+
+    def show_selected(self):
+        key = self.selected()
+        if key:
+            self.status.set(f'Decoding frames for {key}…')
+            self.request(op='render', run=f'output/{self.current_run().name}', key=key)
+
+    def show_png(self, png, stats):
+        self.png = Path(png)
+        self.photo = tk.PhotoImage(file=png)
+        self.canvas.delete('all'); self.canvas.create_image(0, 0, image=self.photo, anchor='nw')
+        self.canvas.configure(scrollregion=(0, 0, self.photo.width(), self.photo.height()))
+        self.status.set(f'{stats["key"]}  ·  {stats["object"] or "object"}  ·  stIoU {stats["stiou"]:.3f}  ·  image saved to output/eval-demo/{self.png.name}')
+
+    def open_image(self):
+        if getattr(self, 'png', None) and self.png.exists():
+            if os.name == 'nt': os.startfile(str(self.png))
+            else: subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(self.png)])
+
+    def close(self):
+        if self.proc is not None and self.proc.poll() is None:
+            try:
+                self.proc.stdin.close(); self.proc.wait(timeout=3)
+            except Exception:
+                self.proc.kill()
+        if not self.errlog.closed:
+            self.errlog.close()
+        if self.win.winfo_exists():
+            self.win.destroy()
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
