@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EAGLE manual test</title>
+<style>
+:root{--bg:#f4f6f8;--panel:#fff;--text:#182535;--muted:#5b6878;--line:#d5dbe2;--accent:#1f6feb;--accent-bg:#e7f0fe;
+--gt:#28c85a;--pred:#eb4034;--crop:#f5b814;--ok:#1a7f37;--ok-bg:#e3f5e8;--bad:#b42318;--bad-bg:#fdecea;--warn-bg:#fff4d6;--warn:#8a5a00}
+@media (prefers-color-scheme:dark){:root{--bg:#11161c;--panel:#1a2129;--text:#e4e9ef;--muted:#9aa7b5;--line:#2e3843;--accent:#5b9bff;--accent-bg:#1b2b44;
+--ok:#5fd17f;--ok-bg:#16301f;--bad:#ff8a80;--bad-bg:#3a1c1a;--warn-bg:#3a2f12;--warn:#f2c35b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;font-weight:600;margin:0 8px 0 0}
+main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;padding:14px 16px;max-width:1500px;margin:0 auto}
+@media (max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card h2{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--muted);text-transform:none}
+select,input,button{font:inherit;color:inherit}
+select,input[type=search]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+button{padding:6px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted)} .small{font-size:12px}
+.pill{font-size:12px;padding:2px 9px;border-radius:999px;background:var(--line)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.bad{background:var(--bad-bg);color:var(--bad)} .pill.warn{background:var(--warn-bg);color:var(--warn)}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:8px}
+.seg button{flex:1;border:0;border-radius:0;padding:6px 4px}
+#list{height:300px;margin-top:6px}
+#stage{position:relative;background:#000;border-radius:8px;overflow:hidden;display:flex;justify-content:center}
+video{display:block;max-width:100%;max-height:62vh}
+#overlay{position:absolute;cursor:crosshair;touch-action:none}
+#timeline{width:100%;height:96px;display:block;margin-top:8px;cursor:pointer;border-radius:6px;background:var(--bg)}
+input[type=range]{width:100%}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.legend span{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}
+#err{color:var(--bad)}
+progress{width:100%;height:8px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:14px}
+@media (max-width:1100px){.grid2{grid-template-columns:minmax(0,1fr)}}
+kbd{font:11px ui-monospace,monospace;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>EAGLE manual test</h1>
+  <label class="row small muted">Checkpoint <select id="ckpt" style="width:auto;min-width:260px"></select></label>
+  <span id="model" class="pill">model …</span>
+  <span class="small muted" style="margin-left:auto">Runs on this computer only · frames are VQ2D annotation frames (5 per second)</span>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Video</h2>
+      <div class="seg" role="tablist">
+        <button data-mode="queries" class="on">VQ2D query</button><button data-mode="clips">Ego4D clip</button><button data-mode="own">My videos</button>
+      </div>
+      <input type="search" id="filter" placeholder="Search object or clip id">
+      <select id="list" size="12"></select>
+      <div id="count" class="small muted" style="margin-top:4px"></div>
+      <div id="uploadBox" style="display:none;margin-top:8px">
+        <label class="row"><button id="uploadBtn">Upload a video…</button><input type="file" id="file" accept="video/*" hidden></label>
+        <div class="small muted" style="margin-top:4px">Converted to 30 fps H.264 and kept in output/manual-test/videos.</div>
+      </div>
+      <progress id="prog" max="1" value="0" style="display:none;margin-top:8px"></progress>
+      <div id="task" class="small muted"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Query</h2>
+      <dl class="kv small">
+        <dt>Object box</dt><dd id="qBox">not drawn</dd>
+        <dt>Box frame</dt><dd id="qCrop">–</dd>
+        <dt>Search up to</dt><dd id="qEnd">–</dd>
+        <dt>Ground truth</dt><dd id="qGt">–</dd>
+      </dl>
+      <div class="row" style="margin-top:10px">
+        <button id="endHere" title="Search frames before the current one">Search up to here</button>
+        <button id="reset" title="Restore the VQ2D query's own box and frames" style="display:none">Original query</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="run" class="primary" style="flex:1">Run EAGLE</button></div>
+      <div id="err" class="small" style="margin-top:6px"></div>
+      <p class="small muted" style="margin:10px 0 0">Pause on a frame and drag on the video to box the object. EAGLE then looks for the object's last appearance before the "search up to" frame.
+        <kbd>←</kbd><kbd>→</kbd> 1 frame, with <kbd>Shift</kbd> 5, <kbd>Space</kbd> play.</p>
+    </div>
+  </section>
+  <section>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <strong id="title">Pick a query or video</strong>
+        <span class="legend small muted"><span style="background:var(--crop)"></span>query box<span style="background:var(--pred)"></span>EAGLE<span style="background:var(--gt)"></span>ground truth</span>
+      </div>
+      <div id="stage"><video id="video" preload="auto" playsinline muted></video><canvas id="overlay"></canvas></div>
+      <div class="row" style="margin-top:8px;flex-wrap:nowrap">
+        <button id="play" aria-label="Play">▶</button>
+        <button id="prev" aria-label="Previous frame">‹</button>
+        <input type="range" id="slider" min="0" max="0" step="1" value="0">
+        <button id="next" aria-label="Next frame">›</button>
+        <span id="fno" class="small muted" style="min-width:150px;text-align:right">frame – </span>
+      </div>
+      <canvas id="timeline" width="1200" height="96"></canvas>
+      <div class="row small muted" style="margin-top:6px">
+        <label><input type="checkbox" id="showGt" checked> ground truth</label>
+        <label><input type="checkbox" id="showAll"> every detection (not just the answer)</label>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Result</h2>
+        <div id="result" class="small muted">No search yet.</div>
+        <div class="row" style="margin-top:10px">
+          <button id="goLast" disabled>Go to last seen</button>
+          <button id="save" disabled>Save query and result</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>How to read it</h2>
+        <p class="small muted" style="margin:0">The red box is EAGLE's answer: the frames where it last saw the object, and where on screen. On the timeline, the blue line is the model's confidence on frames where it found something; the red bar is its answer and the green bar the ground truth. With a VQ2D query left unchanged, the result matches that checkpoint's saved evaluation. tIoU and stIoU follow the official VQ2D definitions; found means stIoU ≥ 0.05.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const v = $('video'), ov = $('overlay'), octx = ov.getContext('2d'), tl = $('timeline'), tctx = tl.getContext('2d');
+const FPS = 5, OFF = 0.005;
+const S = {mode: 'queries', src: null, clip: null, key: null, info: null, detail: null,
+           box: null, crop: null, end: null, result: null, draw: null, poll: null};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+// ------------------------------------------------------------ sources ----
+function fillList() {
+  const q = $('filter').value.trim().toLowerCase(), list = $('list'), rows = S.src ? S.src[S.mode] : [];
+  list.innerHTML = '';
+  let n = 0, shown = 0;
+  for (const r of rows) {
+    const text = S.mode === 'queries' ? `${r[2] || '(no name)'} · search to ${r[3]} · ${r[1].slice(0, 8)}` : r;
+    if (q && !text.toLowerCase().includes(q) && !(S.mode === 'queries' && r[0].toLowerCase().includes(q))) continue;
+    n++;
+    if (shown < 400) { list.add(new Option(text, S.mode === 'queries' ? r[0] : r)); shown++; }
+  }
+  $('count').textContent = rows.length ? `${n.toLocaleString()} of ${rows.length.toLocaleString()}` + (n > shown ? ` (first ${shown} listed; type to narrow)` : '') :
+    (S.mode === 'own' ? 'No videos yet. Upload one below.' : 'Nothing found.');
+  $('uploadBox').style.display = S.mode === 'own' ? '' : 'none';
+}
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+  S.mode = b.dataset.mode; $('filter').value = ''; fillList();
+});
+$('filter').oninput = fillList;
+$('list').onchange = () => { const val = $('list').value; if (val) S.mode === 'queries' ? openQuery(val) : openClip(val); };
+
+async function openQuery(key) {
+  const d = await api('/api/query?key=' + encodeURIComponent(key));
+  S.detail = d; S.key = key;
+  loadVideo(d.clip, d.video, `${d.object} · ${d.clip}`);
+  setOriginal();
+  seek(d.crop_frame);
+}
+async function openClip(clip) {
+  const info = await api('/api/video_info?clip=' + encodeURIComponent(clip));
+  S.detail = null; S.key = null;
+  loadVideo(clip, info, (info.own ? 'My video · ' : 'Ego4D clip · ') + clip);
+  S.box = S.crop = null; S.end = info.frames - 1; S.result = null;
+  refreshQuery(); showResult(); seek(0);
+}
+function loadVideo(clip, info, title) {
+  S.clip = clip; S.info = info; S.result = null;
+  $('title').textContent = title;
+  $('slider').max = Math.max(0, info.frames - 1);
+  ov.width = info.width; ov.height = info.height;
+  if (v.dataset.clip !== clip) { v.src = '/video/' + encodeURIComponent(clip) + '.mp4'; v.dataset.clip = clip; }
+  $('reset').style.display = S.key ? '' : 'none';
+  showResult(); draw();
+}
+function setOriginal() {
+  const d = S.detail; if (!d) return;
+  S.box = d.crop_box.slice(); S.crop = d.crop_frame; S.end = d.query_frame; S.result = null;
+  refreshQuery(); showResult(); draw();
+}
+$('reset').onclick = () => { setOriginal(); seek(S.crop); };
+
+// ------------------------------------------------------------- frames ----
+const frameNow = () => Math.max(0, Math.floor(v.currentTime * FPS + 1e-3));
+function seek(f) {
+  if (!S.info) return;
+  f = Math.max(0, Math.min(S.info.frames - 1, Math.round(f)));
+  v.pause(); v.currentTime = f / FPS + OFF; $('slider').value = f; draw();
+}
+$('slider').oninput = () => seek(+$('slider').value);
+$('prev').onclick = () => seek(frameNow() - 1);
+$('next').onclick = () => seek(frameNow() + 1);
+$('play').onclick = () => v.paused ? v.play() : v.pause();
+v.onplay = () => { $('play').textContent = '❚❚'; tick(); };
+v.onpause = () => { $('play').textContent = '▶'; draw(); };
+v.onseeked = v.onloadeddata = draw;
+function tick() { if (v.paused) return; $('slider').value = frameNow(); draw(); requestAnimationFrame(tick); }
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range' || e.target.tagName === 'SELECT') return;
+  const step = e.shiftKey ? 5 : 1;
+  if (e.key === 'ArrowLeft') { seek(frameNow() - step); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { seek(frameNow() + step); e.preventDefault(); }
+  else if (e.key === ' ') { $('play').click(); e.preventDefault(); }
+  else if (e.key === 'Home') seek(0); else if (e.key === 'End') seek(S.info ? S.info.frames - 1 : 0);
+});
+
+// ---------------------------------------------------------- box drawing ----
+function placeOverlay() {
+  const r = v.getBoundingClientRect(), p = $('stage').getBoundingClientRect();
+  Object.assign(ov.style, {left: (r.left - p.left) + 'px', top: (r.top - p.top) + 'px', width: r.width + 'px', height: r.height + 'px'});
+}
+new ResizeObserver(() => { placeOverlay(); draw(); }).observe(v);
+function pt(e) { const r = ov.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * ov.width, (e.clientY - r.top) / r.height * ov.height]; }
+ov.onpointerdown = e => { if (!S.info) return; v.pause(); S.draw = {a: pt(e), b: pt(e)}; ov.setPointerCapture(e.pointerId); };
+ov.onpointermove = e => { if (S.draw) { S.draw.b = pt(e); draw(); } };
+ov.onpointerup = () => {
+  if (!S.draw) return;
+  const [a, b] = [S.draw.a, S.draw.b]; S.draw = null;
+  const box = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])].map(x => Math.round(x));
+  if (box[2] - box[0] < 4 || box[3] - box[1] < 4) { draw(); return; }
+  S.box = box; S.crop = frameNow(); S.result = null;
+  if (S.end === null || S.end <= 0) S.end = S.info.frames - 1;
+  refreshQuery(); showResult(); draw();
+};
+$('endHere').onclick = () => { if (!S.info) return; S.end = frameNow(); S.result = null; refreshQuery(); showResult(); draw(); };
+
+function refreshQuery() {
+  const t = f => `frame ${f} (${(f / FPS).toFixed(1)} s)`;
+  $('qBox').textContent = S.box ? `[${S.box.map(x => Math.round(x)).join(', ')}] px` : 'not drawn';
+  $('qCrop').textContent = S.crop === null ? '–' : t(S.crop);
+  $('qEnd').textContent = S.end === null ? '–' : t(S.end);
+  const d = S.detail, same = d && S.end === d.query_frame;
+  $('qGt').textContent = !d ? 'none (not a VQ2D query)' : same ? `frames ${d.gt[0][0]}–${d.gt[d.gt.length - 1][0]}` :
+    'only valid for the original search-up-to frame';
+  $('err').textContent = '';
+}
+
+// --------------------------------------------------------------- drawing ----
+function rect(ctx, b, color, w, dash, label) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash || []);
+  ctx.strokeRect(b[0], b[1], b[2] - b[0], b[3] - b[1]);
+  if (label) {
+    ctx.font = `${Math.max(14, ov.width / 60)}px system-ui`; ctx.setLineDash([]);
+    const tw = ctx.measureText(label).width + 10, h = Math.max(18, ov.width / 48), y = b[1] > h ? b[1] - h : b[3];
+    ctx.fillStyle = color; ctx.fillRect(b[0] - w / 2, y, tw, h);
+    ctx.fillStyle = '#111'; ctx.fillText(label, b[0] + 4, y + h * 0.75);
+  }
+  ctx.restore();
+}
+function draw() {
+  octx.clearRect(0, 0, ov.width, ov.height);
+  const f = frameNow(), lw = Math.max(3, ov.width / 360);
+  $('fno').textContent = S.info ? `frame ${f} / ${S.info.frames - 1} · ${(f / FPS).toFixed(1)} s` : 'frame –';
+  const R = S.result, d = S.detail;
+  if (d && $('showGt').checked && S.end === d.query_frame) {
+    const g = d.gt.find(x => x[0] === f); if (g) rect(octx, g.slice(1), css('--gt'), lw, null, 'ground truth');
+  }
+  if (R) {
+    if ($('showAll').checked) for (const b of R.pred.trace.boxes) if (b[0] === f && !R.pred.bboxes.some(x => x[0] === f))
+      rect(octx, b.slice(1), css('--pred'), lw / 2, [8, 6], 'conf ' + (R.pred.trace.scores[f] || 0).toFixed(2));
+    const p = R.pred.bboxes.find(x => x[0] === f);
+    if (p) rect(octx, p.slice(1), css('--pred'), lw, null, 'EAGLE');
+  }
+  if (S.box && S.crop === f) rect(octx, S.box, css('--crop'), lw, null, 'query');
+  if (S.draw) { const [a, b] = [S.draw.a, S.draw.b]; rect(octx, [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])], css('--crop'), lw, [10, 6]); }
+  drawTimeline(f);
+}
+function drawTimeline(f) {
+  const W = tl.width = tl.clientWidth * devicePixelRatio, H = tl.height = 96 * devicePixelRatio, k = devicePixelRatio;
+  tctx.clearRect(0, 0, W, H);
+  if (!S.info) return;
+  const n = Math.max(1, S.info.frames), x = i => 8 * k + (W - 16 * k) * i / n, top = 8 * k, plotH = 44 * k;
+  tctx.font = `${11 * k}px system-ui`;
+  if (S.end !== null) { tctx.fillStyle = css('--line'); tctx.globalAlpha = 0.6; tctx.fillRect(x(0), top, x(S.end) - x(0), plotH); tctx.globalAlpha = 1; }
+  const R = S.result;
+  if (R) {
+    const sc = R.pred.trace.scores, has = new Set(R.pred.trace.boxes.map(b => b[0]));
+    tctx.strokeStyle = css('--accent'); tctx.lineWidth = 1.5 * k; tctx.beginPath(); let on = false;
+    for (let i = 0; i < sc.length; i++) {
+      if (!has.has(i)) { on = false; continue; }
+      const px = x(i + 0.5), py = top + plotH * (1 - sc[i]);
+      on ? tctx.lineTo(px, py) : tctx.moveTo(px, py); on = true;
+    }
+    tctx.stroke();
+    if (R.pred.bboxes.length) { const a = R.pred.bboxes[0][0], b = R.pred.bboxes[R.pred.bboxes.length - 1][0];
+      tctx.fillStyle = css('--pred'); tctx.fillRect(x(a), top + plotH + 6 * k, Math.max(5 * k, x(b + 1) - x(a)), 8 * k); }
+  }
+  const d = S.detail;
+  if (d && S.end === d.query_frame) { const a = d.gt[0][0], b = d.gt[d.gt.length - 1][0];
+    tctx.fillStyle = css('--gt'); tctx.fillRect(x(a), top + plotH + 18 * k, Math.max(5 * k, x(b + 1) - x(a)), 8 * k); }
+  tctx.fillStyle = css('--muted');
+  tctx.fillText('EAGLE', 2 * k, top + plotH + 14 * k); tctx.fillText('truth', 2 * k, top + plotH + 26 * k);
+  if (S.crop !== null) { tctx.fillStyle = css('--crop'); tctx.fillRect(x(S.crop) - 2 * k, top, 4 * k, plotH); }
+  if (S.end !== null) { tctx.strokeStyle = css('--crop'); tctx.setLineDash([4 * k, 3 * k]); tctx.lineWidth = 1.5 * k;
+    tctx.beginPath(); tctx.moveTo(x(S.end), top - 4 * k); tctx.lineTo(x(S.end), H - 4 * k); tctx.stroke(); tctx.setLineDash([]); }
+  tctx.strokeStyle = css('--text'); tctx.lineWidth = 1.5 * k; tctx.beginPath(); tctx.moveTo(x(f + 0.5), 2 * k); tctx.lineTo(x(f + 0.5), H - 2 * k); tctx.stroke();
+}
+function tlSeek(e) { if (!S.info) return; const r = tl.getBoundingClientRect(); seek((e.clientX - r.left - 8) / (r.width - 16) * S.info.frames); }
+tl.onpointerdown = e => { tlSeek(e); tl.setPointerCapture(e.pointerId); tl.onpointermove = tlSeek; };
+tl.onpointerup = () => { tl.onpointermove = null; };
+$('showGt').onchange = $('showAll').onchange = draw;
+
+// ---------------------------------------------------------------- search ----
+$('run').onclick = async () => {
+  $('err').textContent = '';
+  if (!S.info) return $('err').textContent = 'Pick a query or video first.';
+  if (!S.box) return $('err').textContent = 'Draw a box around the object first.';
+  if (!(S.end > 0)) return $('err').textContent = 'Set the last frame to search (after frame 0).';
+  const body = {clip: S.clip, key: S.key, crop_frame: S.crop, crop_box: S.box, query_frame: S.end, checkpoint: $('ckpt').value};
+  try { await api('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); }
+  catch (e) { return $('err').textContent = e.message; }
+  watch(job => { S.result = job.result; S.result.seconds = job.seconds; showResult(); const b = S.result.pred.bboxes; seek(b.length ? b[b.length - 1][0] : S.end); });
+};
+function showResult() {
+  const R = S.result, el = $('result');
+  $('goLast').disabled = $('save').disabled = !R;
+  if (!R) { el.className = 'small muted'; el.textContent = S.box ? 'Ready: press Run EAGLE.' : 'No search yet.'; return; }
+  const b = R.pred.bboxes, t = f => `${f} (${(f / FPS).toFixed(1)} s)`;
+  el.className = 'small';
+  let h = '<dl class="kv">';
+  h += b.length ? `<dt>Last seen</dt><dd>frames ${t(b[0][0])} – ${t(b[b.length - 1][0])}</dd><dt>Confidence</dt><dd>${R.pred.score.toFixed(3)}</dd>`
+                : '<dt>Last seen</dt><dd>not found (no frame passed the threshold)</dd>';
+  h += `<dt>Searched</dt><dd>frames 0–${R.query.query_frame - 1} in ${R.seconds} s</dd>`;
+  const s = R.stats;
+  if (s) h += `<dt>vs ground truth</dt><dd><span class="pill ${s.success ? 'ok' : 'bad'}">${s.success ? 'found' : 'missed'}</span> tIoU ${s.tiou.toFixed(3)} · stIoU ${s.stiou.toFixed(3)}</dd>`;
+  else if (S.detail) h += '<dt>vs ground truth</dt><dd class="muted">not scored: the search-up-to frame was changed</dd>';
+  el.innerHTML = h + '</dl>';
+}
+$('goLast').onclick = () => { const b = S.result && S.result.pred.bboxes; if (b && b.length) seek(b[b.length - 1][0]); };
+$('save').onclick = async () => {
+  const R = S.result; if (!R) return;
+  try { const d = await api('/api/save', {method: 'POST', headers: {'Content-Type': 'application/json'},
+         body: JSON.stringify({query: R.query, object: S.detail ? S.detail.object : null, pred: R.pred, stats: R.stats || null})});
+        $('task').textContent = 'Saved to ' + d.saved; }
+  catch (e) { $('err').textContent = e.message; }
+};
+
+// ------------------------------------------------------------- uploading ----
+$('uploadBtn').onclick = () => $('file').click();
+$('file').onchange = () => {
+  const f = $('file').files[0]; if (!f) return;
+  const x = new XMLHttpRequest();
+  x.open('PUT', '/api/upload?name=' + encodeURIComponent(f.name));
+  $('prog').style.display = ''; $('task').textContent = 'Uploading ' + f.name;
+  x.upload.onprogress = e => { if (e.lengthComputable) $('prog').value = e.loaded / e.total; };
+  x.onload = () => {
+    $('file').value = '';
+    if (x.status !== 202) { $('prog').style.display = 'none'; $('task').textContent = ''; $('err').textContent = (JSON.parse(x.responseText || '{}').error) || 'Upload failed'; return; }
+    watch(async job => { S.src = await api('/api/sources'); fillList(); openClip(job.result.clip); });
+  };
+  x.onerror = () => { $('prog').style.display = 'none'; $('err').textContent = 'Upload failed'; };
+  x.send(f);
+};
+
+// ---------------------------------------------------------------- status ----
+function watch(done) {
+  clearInterval(S.poll); $('run').disabled = true; $('prog').style.display = '';
+  S.poll = setInterval(async () => {
+    const st = await api('/api/status').catch(() => null); if (!st) return;
+    status(st); const j = st.job;
+    if (j.state === 'running') {
+      const p = j.progress; $('prog').value = p ? p[0] / p[1] : 0;
+      $('task').textContent = `${j.phase}${p ? ` ${p[0]} / ${p[1]}` : ''} · ${Math.round(j.seconds)} s`;
+      return;
+    }
+    clearInterval(S.poll); $('run').disabled = false; $('prog').style.display = 'none';
+    if (j.state === 'error') { $('task').textContent = ''; $('err').textContent = j.error; return; }
+    $('task').textContent = j.kind === 'convert' ? `Converted in ${j.seconds} s` : '';
+    done(j);
+  }, 400);
+}
+function status(st) {
+  const m = $('model'), cur = st.checkpoint && st.checkpoint === $('ckpt').value;
+  const map = {loading: ['warn', 'loading model…'], ready: [cur ? 'ok' : 'warn', cur ? 'GPU ready' : 'loads on next run'],
+               error: ['bad', 'model error'], idle: ['', 'model loads on first run']};
+  const [cls, text] = map[st.model] || ['', st.model];
+  m.className = 'pill ' + cls; m.textContent = text; m.title = st.error || st.checkpoint || '';
+}
+async function init() {
+  const [cks, src, st] = await Promise.all([api('/api/checkpoints'), api('/api/sources'), api('/api/status')]);
+  for (const c of cks) $('ckpt').add(new Option(c.label, c.path));
+  if (!cks.length) $('err').textContent = 'No evaluated EAGLE checkpoint found in output/.';
+  S.src = src; fillList(); status(st);
+  $('ckpt').onchange = () => api('/api/status').then(status);
+  setInterval(() => { if (!S.poll || $('run').disabled === false) api('/api/status').then(status).catch(() => {}); }, 3000);
+  if (st.job.state === 'running') watch(() => {});
+}
+init().catch(e => $('err').textContent = 'Could not reach the server: ' + e.message);
+</script>
+</body>
+</html>

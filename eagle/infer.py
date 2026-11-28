@@ -246,7 +246,10 @@ def run_inference(model, records, sam, dev, args, log, batch=16, parts_dir=None,
                 feats = model.features(imgs)
             feats = {k: v.float() for k, v in feats.items()}
             states.append(QueryState(model, r, feats, masks, [a[2] for a in aug], dev, args))
-        stop = max((s.r['query_frame'] for s in states), default=0)
+        # Frames are featurised 16 at a time and the feature heads' BatchNorm uses each batch's own
+        # statistics, so a frame's features depend on its batch. args.decode_until (optional) decodes
+        # further than the queries need so that a single query sees the same batches as the full evaluation.
+        stop = max([s.r['query_frame'] for s in states] + [getattr(args, 'decode_until', 0)]) if states else 0
         buf = []
         def flush():
             imgs = torch.from_numpy(np.stack([b[1] for b in buf])).to(dev)

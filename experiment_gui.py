@@ -393,8 +393,8 @@ class Launcher:
                            ('Evaluate checkpoint…', lambda: self.with_checkpoint('EAGLE evaluate checkpoint', 'eagle')),
                            ('Continue from checkpoint…', lambda: self.with_checkpoint('EAGLE continue training', 'eagle')),
                            ('Resume interrupted run…', lambda: self.with_run_dir('EAGLE resume interrupted run', 'eagle-')),
-                           ('Evaluation demo…', self.open_demo)])
-        self.action_buttons.pop()   # the demo only reads saved results, so it stays usable during a run
+                           ('Evaluation demo…', self.open_demo), ('Manual test (web page)…', self.open_manual)])
+        del self.action_buttons[-2:]   # the demo and manual test run apart from the launched command, so they stay usable
         self.note(tab, 'Uses VQ2D clips in ../Ego4D/v2/clips and VISOR in ../EPIC-KITCHENS-VISOR when present. Prepare is resumable: rerun it after more clips download.\n'
                   'Evaluation searches every frame before the query frame (5 fps) and scores with the official VQ2D metrics from ../VQLoC.', pady=(8, 0))
 
@@ -567,11 +567,40 @@ class Launcher:
             messagebox.showinfo('Evaluation demo', 'No EAGLE run with saved evaluation predictions in output/ yet.'); return
         self.demo = EvalDemo(self.root)
 
+    def open_manual(self):
+        """Start eagle_manual.py (a local web server in the GPU environment) once, then open its page."""
+        proc = getattr(self, 'manual', None)
+        if proc and proc.poll() is None:
+            if self.manual_url:
+                webbrowser.open(self.manual_url)
+            return
+        logs = HERE / 'output' / 'launcher-logs'; logs.mkdir(parents=True, exist_ok=True)
+        log = logs / (time.strftime('%Y%m%d-%H%M%S') + '-manual-test.log')
+        self.manual_log = log.open('w', encoding='utf-8')
+        env = os.environ.copy(); env['PYTHONDONTWRITEBYTECODE'] = '1'; env['PYTHONIOENCODING'] = 'utf-8'
+        self.manual_url = None
+        self.manual = subprocess.Popen([TRAIN_PYTHON, '-u', './eagle_manual.py'], cwd=HERE, env=env,
+                                       stdout=subprocess.PIPE, stderr=self.manual_log, text=True, encoding='utf-8',
+                                       errors='replace', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        self.status.set('Starting the manual test server…')
+
+        def read(proc=self.manual):
+            for line in proc.stdout:
+                if line.startswith('MANUAL '):
+                    self.manual_url = line.split()[1]
+                    self.root.after(0, lambda: (webbrowser.open(self.manual_url),
+                                                self.status.set(f'Manual test page: {self.manual_url} (the model loads in the background)')))
+            if not self.manual_url:
+                self.root.after(0, lambda: messagebox.showerror('Manual test', f'The manual test server stopped; see {log.name} in output/launcher-logs.'))
+        threading.Thread(target=read, daemon=True).start()
+
     def close(self):
         if self.busy and not messagebox.askyesno('Close launcher', 'Stop the active run and close the launcher?'):
             return
         if getattr(self, 'demo', None):
             self.demo.close()
+        if getattr(self, 'manual', None) and self.manual.poll() is None:
+            self.manual.terminate()
         self.stop(); self.root.destroy()
 
 

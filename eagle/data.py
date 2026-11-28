@@ -49,6 +49,17 @@ def mask_to_box(mask):
 
 # ---------------------------------------------------------------- VQ2D ------
 
+EXTRA_CLIP_DIRS = []             # further folders searched for <clip_uid>.mp4 (the manual test's own videos)
+
+
+def clip_path(clip_uid):
+    for d in (CLIPS, *EXTRA_CLIP_DIRS):
+        p = Path(d) / f'{clip_uid}.mp4'
+        if p.exists():
+            return p
+    return CLIPS / f'{clip_uid}.mp4'
+
+
 def local_clip_uids():
     return {p.stem for p in CLIPS.glob('*.mp4') if p.stat().st_size > 0}
 
@@ -88,7 +99,7 @@ class ClipReader:
 
     def __init__(self, clip_uid, orig_size):
         import av
-        self.path = CLIPS / f'{clip_uid}.mp4'
+        self.path = clip_path(clip_uid)
         self.container = av.open(str(self.path))
         self.stream = self.container.streams.video[0]
         self.stream.thread_type = 'AUTO'
